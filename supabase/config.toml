@@ -1,9 +1,0 @@
-# Config minima per la Supabase CLI (supabase link / supabase functions deploy).
-# Il project_id va sostituito con il ref del tuo progetto (Project Settings → General).
-project_id = "jextaqhknpvnhryfmjqu"
-
-[functions.ics-feed]
-# Il feed .ics deve restare raggiungibile senza header di autenticazione:
-# le app calendario (Google/Apple Calendar) non li inviano quando si
-# iscrivono a un URL .ics.
-verify_jwt = false

@@ -29,3 +29,5 @@ yarn-error.log*
 
 # Claude Code local settings (approvazioni tool, non codice)
 .claude/settings.local.json
+
+exports/*

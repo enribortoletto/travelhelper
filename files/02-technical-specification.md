@@ -1,8 +1,8 @@
 # Technical specification — build guide
 
-This is the complete, self-contained spec for building the trip-planning app described in this project — written for an AI-assisted ("vibe coded") build session: concrete enough to implement directly from, without needing to cross-reference the older planning docs (`00`–`05`), which were written for one specific trip and are superseded by this file and by `06-core-logic-and-algorithms.md`, embedded below as Part B.
+This is the complete, self-contained spec for building the trip-planning app described in this project — written for an AI-assisted ("vibe coded") build session: concrete enough to implement directly from, without needing to cross-reference the older planning docs (`00`–`05`), which were written for one specific trip and are superseded by this file and by `01-core-logic-and-algorithms.md`, embedded below as Part B.
 
-**Structure**: Part A covers what to build and with what (stack, data model, screens). Part B — reproduced verbatim from `06-core-logic-and-algorithms.md` — is the authoritative source of every business rule, default, and edge case; nothing in Part A overrides it. Part C covers integration wiring and a suggested build order.
+**Structure**: Part A covers what to build and with what (stack, data model, screens). Part B — reproduced verbatim from `01-core-logic-and-algorithms.md` — is the authoritative source of every business rule, default, and edge case; nothing in Part A overrides it. Part C covers integration wiring and a suggested build order.
 
 ---
 
@@ -121,7 +121,7 @@ This spec deliberately does **not** prescribe a navigation structure, screen bre
 
 # Part B — Core domain logic and algorithms
 
-*(Reproduced verbatim from `06-core-logic-and-algorithms.md` — this is the single source of truth for every rule, default, and threshold referenced above. Section numbers below (§1–§17) are self-contained within this part.)*
+*(Reproduced verbatim from `01-core-logic-and-algorithms.md` — this is the single source of truth for every rule, default, and threshold referenced above. Section numbers below (§1–§17) are self-contained within this part.)*
 
 ## 1. Trip timezone
 

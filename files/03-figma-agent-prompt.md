@@ -1,14 +1,34 @@
 # Figma agent prompt — hi-fi wireframe generation
 
-Prompt to paste into a Figma AI design agent (e.g. Figma Make / Figma's agentic design mode) to generate a high-fidelity wireframe of the app. **Attach `06-core-logic-and-algorithms.md` and `07-technical-specification.md` as context** — the prompt below assumes the agent can read them; it is the only source of truth for what to design. Nothing else should inform the output: no other file in this project, no assumptions about a specific trip, destination, or dates.
+Prompt to paste into a Figma AI design agent (e.g. Figma Make / Figma's agentic design mode) to generate a high-fidelity wireframe of the app. **Attach `01-core-logic-and-algorithms.md`, `02-technical-specification.md`, and `04-import-template.xlsx` as context** — the prompt below assumes the agent can read all three. The two markdown files are the only source of truth for what to design (rules, data model, capabilities); nothing else should inform the app's behavior or structure. `04-import-template.xlsx` is a separate, narrower kind of input — see "Placeholder content" below — it supplies realistic sample content for the mockup, not rules.
 
 ---
 
 ## Prompt
 
-You are designing a high-fidelity Figma wireframe for a mobile-first, installable web app (PWA): a collaborative group trip planner. Your **only** source of truth for what the app does, what data it holds, and what rules govern it is the two attached files — `06-core-logic-and-algorithms.md` (the domain rules) and `07-technical-specification.md` (stack, data model, and the same rules embedded as its Part B). Do not invent features, screens, or data fields that aren't grounded in those two files. Do not design for any specific real trip, destination, or date — the app is generic, for any group trip.
+You are designing a high-fidelity Figma wireframe for a mobile-first, installable web app (PWA): a collaborative group trip planner. Your **only** source of truth for what the app does, what data it holds, and what rules govern it is the two attached markdown files — `01-core-logic-and-algorithms.md` (the domain rules) and `02-technical-specification.md` (stack, data model, and the same rules embedded as its Part B). Do not invent features, screens, or data fields that aren't grounded in those two files. The app itself is generic — not built for any one trip — but see "Placeholder content" below for what to actually put inside the mockup.
+
+### Placeholder content — pull it from `04-import-template.xlsx`, don't invent it
+
+A high-fidelity wireframe needs real-looking content, not lorem ipsum or generic labels like "Stop 1" / "Activity name" — but the app being generic (previous paragraph) doesn't mean the *mockup* has to look empty or fake. Resolve this by treating `04-import-template.xlsx` (sheet "Events") purely as a **content source**, separate from the two rule files: every stop name, category, day, time, place, price, and description shown anywhere in Phase 3 — and every example instance used while building Phase 2 components — should be pulled directly from its rows, not invented from scratch. This one populated trip (a real Scotland itinerary) is what makes the wireframe look like a real product instead of a template with placeholders in it; it is not evidence that the app is destination-specific, and nothing about it should leak into Phase 1 or Phase 2 as a hardcoded rule (e.g. don't hardcode "Scotland" into a component, don't assume every trip has a rental car leg).
+
+Specifically:
+- Use its `accommodation` rows for the accommodation stops and their check-in windows (§7).
+- Use its `transport` rows (flights, car rental) for transit/transport-category content, including the Edinburgh Airport entries as the resolved place for the arrival and departure flights.
+- Use its `activity`, `meal`, and `stop` rows for everything else, including the already-differentiated data per type (opening-hours notes on activities, kitchen-closing times on meals, neither on plain waypoint stops) — that differentiation is itself worth reflecting in the wireframe, since it's exactly what §8's opening-hours rule and §7's check-in-window rule look like with real values.
+- Reuse rows marked `optional` in the spreadsheet to populate the "AI-proposed optional stops" surface from Phase 3, rather than inventing separate example suggestions.
+- If more example content is needed than the sheet provides for a given component variant, extrapolate in the same style and geography (Scotland, same trip) rather than switching to an unrelated placeholder trip — one coherent example trip throughout the file, not a mix.
 
 Work in three ordered phases. Do not start Phase 3 until Phases 1 and 2 are complete and consistent.
+
+### File organization — two Figma pages, nothing built outside them
+
+Create exactly two pages in the Figma file (Figma "pages," the top-level canvases — not to be confused with app screens):
+
+- **"Components"** — where Phase 2 lives: every atom, molecule, and organism, organized by that same atomic hierarchy, each as a proper Figma component with its variants. Nothing here is a mockup of an app screen; it's the library itself.
+- **"Design WF"** — where Phase 3 lives: every app screen and flow, built exclusively from instances of the components defined on the "Components" page. No component should ever be defined for the first time directly on "Design WF" — if a screen needs something new, go define it as a component on "Components" first, then instance it back.
+
+Phase 1's variables aren't tied to either page — they're file-level and available from both.
 
 ### Phase 1 — Variables (design tokens), in valid Tailwind CSS syntax
 
@@ -27,7 +47,7 @@ Do not use any fill, stroke, spacing, radius, or text style anywhere in the file
 
 ### Phase 2 — Atomic design system (build once, reuse everywhere)
 
-Organize the component library using atomic design: **atoms** (the smallest indivisible pieces — a single badge, a button, an icon, an input), **molecules** (small groups of atoms functioning together — a stop-list row combining a category badge, a status indicator, and text), and **organisms** (larger, self-contained assemblies — the AI preview card, a full form section, a settings block). Structure Figma's layer/page organization to reflect this hierarchy explicitly, so atoms are never redefined inside a molecule instead of reused from the atom set.
+Build all of this on the **"Components"** page (see "File organization" above). Organize the component library using atomic design: **atoms** (the smallest indivisible pieces — a single badge, a button, an icon, an input), **molecules** (small groups of atoms functioning together — a stop-list row combining a category badge, a status indicator, and text), and **organisms** (larger, self-contained assemblies — the AI preview card, a full form section, a settings block). Structure the frames/sections on that page to reflect this hierarchy explicitly, so atoms are never redefined inside a molecule instead of reused from the atom set.
 
 **Every component that can be in more than one state must expose all of those states as variants of the same component — never as separate, similarly-named components, and never as a state left undrawn.** For example, a stop's status card (§2) must be one component with an `inactive`/`in_progress`/`skipped` variant property, all three fully designed — not one card with an "inactive" look improvised by opacity, and not three disconnected components that drift out of sync when one gets edited later. Apply this systematically:
 
@@ -60,7 +80,7 @@ Every component must actually get reused in Phase 3 — no page should contain a
 
 ### Phase 3 — Screens
 
-The two source files deliberately do **not** prescribe a navigation structure or screen breakdown (see `07-technical-specification.md`, section A4) — that decision is yours. Design whatever set of mobile-first screens and flows most clearly covers every capability below, reusing only the Phase 2 components and only Phase 1 variables. Cover, at minimum:
+Build all of this on the **"Design WF"** page (see "File organization" above). The two source files deliberately do **not** prescribe a navigation structure or screen breakdown (see `02-technical-specification.md`, section A4) — that decision is yours. Design whatever set of mobile-first screens and flows most clearly covers every capability below, reusing only the Phase 2 components (as instances, from the "Components" page) and only Phase 1 variables. Cover, at minimum:
 
 - A live view of what's happening now/next, with runtime status, position-confirmation, a "start now" action (§2), "mark as delayed," and edit/delete entry points that route into the AI preview (§14) — never a direct edit.
 - A trip-wide view: all `planned` stops on a map colored by category, each day's accommodation, and trip-level progress (§4 stops-progress fraction; §7 distance/time traveled so far).
@@ -77,3 +97,4 @@ The two source files deliberately do **not** prescribe a navigation structure or
 - Every component with more than one possible state exposes all of them as variants of that one component — zero states left undrawn, zero near-duplicate components standing in for what should be a variant.
 - Every component and every screen has been built and checked in both light and dark mode via the Phase 1 variable modes — zero screens or components that only exist in one mode.
 - Every screen in Phase 3 is traceable to a specific rule or capability in the two source files — nothing designed that isn't grounded there, and nothing from the source files left uncovered.
+- The file has exactly two pages, "Components" and "Design WF," and nothing is built outside them — no component defined for the first time on "Design WF," no screen mockup living on "Components."

@@ -1,0 +1,193 @@
+@import "tailwindcss";
+
+/*
+  Palette e convenzioni ispirate a HyperUI (hyperui.dev): card bordate con
+  ombra leggera, badge pill pastello, bottoni pieni arrotondati, gerarchia
+  testo su scala di grigi con il colore usato come accento (non come sfondo
+  diffuso). --bg/--bg-elevated/--border/--text/--text-muted seguono la scala
+  gray di Tailwind; --cat-* restano i colori distintivi per categoria.
+*/
+:root {
+  color-scheme: light dark;
+
+  --bg: #ffffff;
+  --bg-elevated: #ffffff;
+  --text: #111827; /* gray-900 */
+  --text-muted: #6b7280; /* gray-500 */
+  --border: #e5e7eb; /* gray-200 */
+
+  /* App in bianco e nero: --primary è ora neutro (nero/bianco a seconda del
+     tema) — l'unico colore che resta nell'app è quello delle --cat-* per
+     categoria evento. Usato per azioni primarie generali: bottoni CTA, focus
+     ring, tab attivo, switch acceso, spunta "vissuta". */
+  --primary: #111827;
+  --primary-soft: #f3f4f6;
+
+  /* Grigio chiaro neutro per barre di avanzamento (progress fill) — non un
+     accento colorato, solo una tonalità di grigio più marcata di --border
+     così resta leggibile su --bg-elevated. */
+  --progress-fill: #d1d5db; /* gray-300 */
+
+  /* Unica altra eccezione al bianco e nero (oltre alle --cat-*): il rosso del
+     pulsante "Elimina", esplicitamente richiesto colorato anche nell'app
+     altrimenti in scala di grigi. Variabile di tema (non classe dark: di
+     Tailwind) così segue il toggle manuale chiaro/scuro dell'app, non solo
+     la preferenza di sistema. */
+  --danger: #dc2626; /* red-600 */
+
+  /* Category palette — unica fonte di colore nell'app. Stessa tonalità
+     scelta dall'utente, luminosità corretta per un contrasto AA (4.5:1) su
+     sfondo bianco quando usata come testo/badge. */
+  --cat-alloggio: #ae2012;
+  --cat-tappa: #378268;
+  --cat-attivita: #a26900;
+  --cat-relax: #8c7123;
+  --cat-trasporto: #098083;
+  --cat-nota: #001219;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111827; /* gray-900 */
+    --bg-elevated: #1f2937; /* gray-800 */
+    --text: #f3f4f6; /* gray-100 */
+    --text-muted: #9ca3af; /* gray-400 */
+    --border: #374151; /* gray-700 */
+
+    --primary: #f3f4f6;
+    --primary-soft: #374151;
+
+    --progress-fill: #4b5563; /* gray-600 */
+
+    --danger: #f87171; /* red-400 */
+
+    --cat-alloggio: #e6675a;
+    --cat-tappa: #b5e3d3;
+    --cat-attivita: #f9cb74;
+    --cat-relax: #e7d9b1;
+    --cat-trasporto: #48e7ea;
+    --cat-nota: #3dc1f5;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #111827;
+  --bg-elevated: #1f2937;
+  --text: #f3f4f6;
+  --text-muted: #9ca3af;
+  --border: #374151;
+
+  --primary: #f3f4f6;
+  --primary-soft: #374151;
+
+  --progress-fill: #4b5563; /* gray-600 */
+
+  --danger: #f87171; /* red-400 */
+
+  --cat-alloggio: #e6675a;
+  --cat-tappa: #b5e3d3;
+  --cat-attivita: #f9cb74;
+  --cat-relax: #e7d9b1;
+  --cat-trasporto: #48e7ea;
+  --cat-nota: #3dc1f5;
+}
+
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-elevated: #ffffff;
+  --text: #111827;
+  --text-muted: #6b7280;
+  --border: #e5e7eb;
+
+  --primary: #111827;
+  --primary-soft: #f3f4f6;
+
+  --progress-fill: #d1d5db; /* gray-300 */
+
+  --danger: #dc2626; /* red-600 */
+
+  --cat-alloggio: #ae2012;
+  --cat-tappa: #378268;
+  --cat-attivita: #a26900;
+  --cat-relax: #8c7123;
+  --cat-trasporto: #098083;
+  --cat-nota: #001219;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  /* Su iOS, in particolare da PWA standalone (aggiunta a Home), 100% non
+     sempre coincide con l'altezza reale visibile dello schermo — gli
+     elementi fixed (bottom-nav, dettaglio evento) restano staccati dal
+     fondo vero. 100dvh (dynamic viewport height) segue l'area visibile
+     reale; i browser che non la supportano ignorano la riga e restano su
+     100% sopra. */
+  height: 100dvh;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* Effect style "Shadow/Card" del Figma (0px 2px 8px rgba(0,0,0,0.06)) al
+   posto dello shadow-sm generico di Tailwind, usato in tutte le card. */
+.shadow-card {
+  box-shadow: 0px 2px 8px 0px rgba(0, 0, 0, 0.06);
+}
+
+/* Micro-interazioni: transizioni leggere invece di comparse a scatto. */
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-page {
+  animation: page-fade-in 0.22s ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-toast-in {
+  animation: toast-in 0.2s ease-out;
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.animate-skeleton {
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-page,
+  .animate-toast-in,
+  .animate-skeleton {
+    animation: none;
+  }
+}

@@ -19,6 +19,7 @@ import type { Category, EventRow, Trip, TravelModeOverride } from "../../lib/typ
 import { CategoryManager } from "../../components/stops/CategoryManager";
 import { stopFormValuesToPayload, type StopFormValues } from "../../components/stops/StopForm";
 import { TravelModeOverridesManager } from "../../components/stops/TravelModeOverridesManager";
+import { CalendarExportCard } from "../../components/stops/CalendarExportCard";
 import { TodayView } from "./TodayView";
 import { ItineraryView } from "./ItineraryView";
 
@@ -201,7 +202,10 @@ export default function TripDetailPage() {
       )}
 
       {trip && tab === "routing" && (
-        <TravelModeOverridesManager tripId={trip.id} overrides={overrides} onChange={setOverrides} />
+        <>
+          <CalendarExportCard calendarToken={trip.calendar_token} />
+          <TravelModeOverridesManager tripId={trip.id} overrides={overrides} onChange={setOverrides} />
+        </>
       )}
 
       {trip && tab === "categories" && (

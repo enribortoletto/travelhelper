@@ -11,6 +11,7 @@ export interface Trip {
   end_date: string;
   timezone: string;
   default_day_start: string;
+  calendar_token: string;
   created_by: string;
   created_at: string;
 }

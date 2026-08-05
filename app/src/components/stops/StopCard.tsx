@@ -1,5 +1,6 @@
 import { format } from "date-fns";
 import { isPast } from "../../lib/status";
+import { buildNavigationLink } from "../../lib/navigation";
 import type { Category, EventRow, Trip } from "../../lib/types";
 import { Card } from "../ui/Card";
 
@@ -45,6 +46,7 @@ export function StopCard({
     timezone: trip.timezone,
   });
   const displayStatus = stop.status_runtime === "inactive" && past ? "done" : stop.status_runtime;
+  const navLink = buildNavigationLink(stop);
 
   return (
     <Card size="sm" className={`flex flex-col gap-2 ${stop.is_derived ? "border border-dashed border-border-strong bg-surface-1" : ""}`}>
@@ -89,8 +91,8 @@ export function StopCard({
               Delay +15m
             </button>
           )}
-          {stop.maps_link && (
-            <a href={stop.maps_link} target="_blank" rel="noreferrer" className="text-brand">
+          {navLink && (
+            <a href={navLink} target="_blank" rel="noreferrer" className="text-brand">
               Navigate
             </a>
           )}

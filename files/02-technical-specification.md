@@ -1,6 +1,6 @@
 # Technical specification — build guide
 
-This is the complete, self-contained spec for building the trip-planning app described in this project — written for an AI-assisted ("vibe coded") build session: concrete enough to implement directly from, without needing to cross-reference the older planning docs (`00`–`05`), which were written for one specific trip and are superseded by this file and by `01-core-logic-and-algorithms.md`, embedded below as Part B.
+This is the complete, self-contained spec for building the trip-planning app described in this project — written for an AI-assisted ("vibe coded") build session: concrete enough to implement directly from, without needing to cross-reference the older, now-deleted planning docs from the original single-trip prototype (their old `00`–`05` numbering has since been reused by unrelated, current files in this same folder — don't confuse the two). This file and `01-core-logic-and-algorithms.md` (embedded below as Part B) supersede all of that earlier material.
 
 **Structure**: Part A covers what to build and with what (stack, data model, screens). Part B — reproduced verbatim from `01-core-logic-and-algorithms.md` — is the authoritative source of every business rule, default, and edge case; nothing in Part A overrides it. Part C covers integration wiring and a suggested build order.
 
@@ -24,15 +24,16 @@ Design principles (see Part B for the rules these imply):
 |---|---|---|
 | Frontend | React + Tailwind CSS, installable PWA | Service Worker + manifest required for iOS push (Part B §11) |
 | Backend | Postgres-based BaaS: Auth, Realtime (`postgres_changes`), Row-Level Security, Edge/serverless Functions | e.g. Supabase — RLS is what enforces roles (Part B §15), Realtime is what powers multi-user sync |
+| Auth methods | Email/password (with a client-side strength check on sign-up) and a password-reset-by-email flow | Both are required capabilities, not just "Auth" left generic |
 | Maps | A maps platform with JS/SDK maps, Places lookup, and a Directions/routing API | e.g. Google Maps Platform — split into a browser-restricted client key and an unrestricted server key (used by background jobs) |
 | Calendar export | Server-generated `.ics` feed, no external service | Part B §13 |
 | Push notifications | Web Push (Service Worker + Push API), VAPID keys | Part B §11 |
-| AI assistant | An LLM provider API with a web-search tool, called only from a server-side function | e.g. Anthropic API — never call from the client, the API key must not be exposed (Part B §14) |
+| AI assistant | An LLM provider API with a web-search tool, called only from a server-side function | OpenAI API — never call from the client, the API key must not be exposed (Part B §14) |
 | Flight tracking | A flight-status data provider, queried from a scheduled job | Part B §12 |
 
 ## A3. Data model
 
-All tables are scoped by `trip_id` and protected by RLS per Part B §15 (read: any member; write: `admin`/`editor` only; membership/role changes: `admin` only).
+All tables are scoped by `trip_id` and protected by RLS per Part B §15 (read: any member; write: `admin`/`editor` only; membership/role changes: `admin` only; trip deletion and ownership transfer: the trip's `owner` specifically, not just any `admin`).
 
 **`trips`**
 | Column | Type | Notes |
@@ -49,8 +50,11 @@ All tables are scoped by `trip_id` and protected by RLS per Part B §15 (read: a
 |---|---|---|
 | trip_id, user_id | uuid, composite pk | |
 | role | enum `admin`/`editor`/`viewer` | §15 |
+| is_owner | bool, default false | exactly one `true` row per trip; a flag on top of `admin`, not a separate role (§15) |
 | display_name | text | shown in "Updated by …" toasts |
 | joined_at | timestamptz | |
+
+**`trip_invites`** — `id, trip_id, role, token, invited_email (nullable), created_by, created_at, expires_at (nullable)` (§15) — one table backing both invite mechanisms: a shareable link (`invited_email` null, anyone with the token joins at `role`) and a direct email invite (`invited_email` set, sent to one address at `role`). Only `admin` can create either kind.
 
 **`categories`**
 | Column | Type | Notes |
@@ -62,7 +66,7 @@ All tables are scoped by `trip_id` and protected by RLS per Part B §15 (read: a
 | icon | text | icon identifier |
 | is_system | bool | true only for the two seeded rows `accommodation` and `transport` — non-renameable, non-deletable |
 
-**`events`** — the single table for every stop, transit leg, and check-in companion
+**`events`** — the single table for every stop, transit leg, and check-in/check-out companion
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid pk | |
@@ -81,12 +85,13 @@ All tables are scoped by `trip_id` and protected by RLS per Part B §15 (read: a
 | opening_hours | jsonb, nullable | per-weekday `{open, close}`; §8 |
 | kitchen_closing_time | time, nullable | food-service only; if null and venue closing time is known, treat as `closing_time − 1h` (§8) |
 | check_in_window_start / check_in_window_end | time, nullable | accommodation only (§7) |
+| checkout_deadline | time, nullable | accommodation only, a single cutoff not a window (§7) |
 | weather_dependent | bool | |
 | priority | enum `high`/`medium`/`low`, nullable | optional stops only |
-| is_derived | bool | true for transit and check-in events |
-| derived_kind | enum `transit`/`checkin`, nullable | |
+| is_derived | bool | true for transit, check-in, and check-out events |
+| derived_kind | enum `transit`/`checkin`/`checkout`, nullable | |
 | transit_from_event_id / transit_to_event_id | uuid fk → events, nullable | transit events only |
-| checkin_for_event_id | uuid fk → events, nullable | check-in events only, points at the parent accommodation stop |
+| checkin_for_event_id / checkout_for_event_id | uuid fk → events, nullable | check-in/check-out events only, point at the parent accommodation stop |
 | flight_number | text, nullable | |
 | flight_leg | enum `departure`/`arrival`, nullable | |
 | delay_minutes | int, default 0 | written by §12's flight job |
@@ -95,11 +100,11 @@ All tables are scoped by `trip_id` and protected by RLS per Part B §15 (read: a
 
 **`travel_mode_overrides`** — `trip_id, place_id_a, place_id_b, mode (driving/walking/transit), note` (§6)
 
-**`event_travel_baseline`** — `trip_id, from_event_id, to_event_id, baseline_minutes` (§11 rule 5)
+**`event_travel_baseline`** — `trip_id, from_event_id, to_event_id, baseline_minutes, checked_at` (§11 rule 5) — `checked_at` is what §17's adaptive lookahead table (30/10/5-minute tiers by countdown to departure) checks against to decide whether a leg is actually due for a re-check on a given job run, instead of re-querying it every run regardless of tier.
 
 **`user_settings`** — `user_id, trip_id, daily_recap_time, quiet_hours_start, quiet_hours_end, push_subscription (jsonb), notification_prefs (jsonb)` (§11)
 
-**`notification_log`** — `trip_id, user_id, notification_type, event_id, day, created_at`, unique constraint on `(trip_id, user_id, notification_type, event_id, day)` for the claim/dedup pattern (§11)
+**`notification_log`** — `trip_id, user_id, notification_type, event_id, day, created_at, title, body, read_at (nullable)`, unique constraint on `(trip_id, user_id, notification_type, event_id, day)` for the claim/dedup pattern (§11). The same row that claims dedup is also the persisted in-app history entry (§11) — `title`/`body` are what a notification-history screen renders, `read_at` (null = unread) is what an unread-count badge counts.
 
 **`itinerary_change_log`** — `id, trip_id, event_id, change_type, old_value (jsonb), new_value (jsonb), triggered_by_user, ai_preview_id (nullable), created_at`
 
@@ -110,11 +115,15 @@ All tables are scoped by `trip_id` and protected by RLS per Part B §15 (read: a
 This spec deliberately does **not** prescribe a navigation structure, screen breakdown, or layout (no fixed tab count, no mandated "Today/Trip/Calendar" split, no required component tree). That's an implementation decision to be made during the build, in whatever shape best serves the feature set below — a different information architecture is fine as long as every capability here is reachable somewhere and every rule in Part B is respected regardless of which screen triggers it.
 
 **Capabilities the UI must expose, in some form:**
+- Authentication: sign up (email/password, with a strength check), log in, and password reset — before any trip-specific screen is reachable.
+- A list of the trips the signed-in user belongs to, with a way to switch between them and to create a new one (§16) — a user isn't confined to a single trip.
 - A live, map-based view of what's happening now or next (runtime status, §2), with a way to open navigation to a stop (§9), mark it started early (§2), mark it delayed, and edit/delete it — edits and deletes always routed through the AI preview (§14), never a direct write.
 - A trip-wide view of the full plan: all `planned` stops, the accommodation for each night, and trip-level progress/travel stats (§4, §7).
-- A way to create, edit, reorder, and retime stops — the same editing surface used both for initial trip setup (§16) and for every later change — including toggling a stop's planning status between `planned`/`optional` (§3) and seeing/accepting AI-proposed `optional` stops that now fit (§14 Flow 1).
-- Conflicts (opening hours §8, check-in windows §7, other stops) must always be shown explicitly, never silently absorbed, wherever a change is being made.
-- Trip settings: notification preferences and quiet hours (§11), trip basics (§1, §16), member/role management restricted to `admin` (§15), category management (§10), and the PWA install prompt.
+- A way to create, edit, reorder, and retime stops — the same editing surface used both for initial trip setup (§16) and for every later change — including toggling a stop's planning status between `planned`/`optional` (§3) and seeing/accepting AI-proposed `optional` stops that now fit, on whichever day(s) they fit (§14 Flow 1).
+- A way to search the trip's own stops (by name, category, or place) — scoped to what's already in the itinerary, distinct from the place lookup that happens when adding something new (§14 Flow 1).
+- Conflicts (opening hours §8, check-in/check-out §7, other stops) must always be shown explicitly, never silently absorbed, wherever a change is being made.
+- A persisted, browsable notification history with an unread-count indicator (§11) — separate from, but populated by, the same push-notification rules, plus realtime collaboration updates (§15) if those are also meant to appear there.
+- Trip settings: notification preferences and quiet hours (§11), trip basics (§1, §16), member/role management restricted to `admin` (§15) — including generating an invite link or sending an email invite, each with a role attached (§15) — trip deletion and ownership transfer restricted to the owner specifically (§15), category management (§10), and the PWA install prompt.
 - Real-time sync (§15) must be reflected live regardless of which screen(s) the implementation ends up with.
 
 ---
@@ -134,6 +143,8 @@ Every trip has a single IANA timezone (e.g. `"Europe/London"`, `"America/New_Yor
 **Requirement**: use full IANA-timezone-aware conversion everywhere a trip's local time needs to be computed, including in exports (e.g. a calendar feed) — never assume a fixed UTC offset, since a trip's dates may span a daylight-saving transition or the trip may be scheduled anywhere in the world.
 
 This logic must exist in exactly the same form on both the client (for immediate UI state) and any backend job that reasons about "what's happening right now" (notifications, delay detection) — implemented twice, once per runtime, since client and server don't share a module system, but behaviorally identical.
+
+---
 
 ## 2. Event status
 
@@ -162,18 +173,22 @@ Three runtime statuses: `skipped`, `inactive`, `in_progress`.
 
 **"Past" flag**: a lightweight completion indicator, independent of the runtime status — true if the event's day is in the past, or if it's today and past its end time (or the +1h fallback, or midnight if even the start time is missing). Purely a UI affordance; it must never feed into planning logic. This is deliberately a different predicate from the "has this happened yet" one used for trip/travel progress (§4): that one triggers off `start_time` and directly drives a progress bar, this one off `end_time` and never drives anything but a badge. Keep them separate — merging them into one "is it done" concept would change what the progress bar means.
 
+---
+
 ## 3. Planning status: planned vs. optional
 
 **Rule**: every *primary* stop — anything the user (or an assistant proposal) added directly, as opposed to a derived event, below — carries a **planning status**, `planned` or `optional`, orthogonal to its runtime status (§2) and to its category (§10). This is how a trip separates "this is happening" from "this is an idea, add it if it fits":
 
 - **`planned`**: locked into the itinerary — it must be there. It participates in day-route ordering (§5), transit-event generation (§7), notifications (§11), and the calendar export (§13) exactly like anything else committed to the plan.
-- **`optional`**: a candidate, not yet committed. Excluded from transit-event generation, notifications, and the calendar export — but it's exactly what the AI assistant (§14) draws from when a day has room: given a day's current plan, the assistant evaluates the trip's `optional` stops and proposes any that would actually fit (time-wise, opening-hours-wise) as additions, through the same preview-then-confirm mechanism as any other assistant-driven change.
+- **`optional`**: a candidate, not yet committed. Excluded from transit-event generation, notifications, and the calendar export — but it's exactly what the AI assistant (§14) draws from when a day has room: given the trip's current plan, the assistant evaluates the trip's `optional` stops and proposes any that would actually fit (time-wise, opening-hours-wise) as additions, through the same preview-then-confirm mechanism as any other assistant-driven change. A proposal isn't limited to the single day currently being viewed — the same `optional` stop can be evaluated against every day's free time and surfaced against whichever ones it actually fits (e.g. "fits Wednesday morning, or Friday afternoon"), since nothing about the stop itself is day-specific until it's accepted.
 
 Users can move any primary stop between `planned` and `optional` at any time, in either direction — accepting an assistant proposal sets a stop to `planned`; deciding a previously-committed stop isn't going to happen after all sets it back to `optional` (or it can simply be deleted, if it's not worth keeping as an idea) — **except accommodation, below, where only `planned` is ever a legal value.**
 
 **Accommodation is always `planned`, never `optional`**: an accommodation stop represents a real booking for a specific night, and every night of the trip needs one — it can't be a "maybe." The field exists on accommodation exactly as it does on every other primary stop (one column, one enum, no special-cased schema) — it's simply never allowed to hold `optional` there, enforced by a check constraint, with the same rule enforced again at the AI assistant's guardrail level (§14) as defense in depth, not as the only place it's enforced.
 
-**Derived events carry no planning status field at all — not "always planned," genuinely absent**: transit events and check-in companion events (both §7) aren't primary stops, so this field doesn't apply to them the way it applies to everything above. Their presence on the calendar is entirely a side effect of their generating stops (a transit event exists only between two stops that are both currently `planned`; a check-in event exists only while its parent accommodation — always `planned`, per above — has a check-in window set). There is no independent switch a user can flip on a derived event itself.
+**Derived events carry no planning status field at all — not "always planned," genuinely absent**: transit events and check-in/check-out companion events (all §7) aren't primary stops, so this field doesn't apply to them the way it applies to everything above. Their presence on the calendar is entirely a side effect of their generating stops (a transit event exists only between two stops that are both currently `planned`; a check-in or check-out event exists only while its parent accommodation — always `planned`, per above — has the corresponding window or deadline set). There is no independent switch a user can flip on a derived event itself.
+
+---
 
 ## 4. Trip progress
 
@@ -203,6 +218,8 @@ Reduce this to a single "stops progress" fraction — how many of the trip's sto
 
 **Resolving genuinely ambiguous transit-corridor cases with Snap to Roads**: for the transit case above, when a fix's accuracy circle straddles the corridor boundary (neither clearly inside nor clearly outside even after the accuracy adjustment), a routing platform's road-snapping capability (e.g., Google Maps Platform's Roads API) can disambiguate by aligning the raw fix to the nearest plausible road segment before re-checking it against the route. This is a paid, rate-limited tie-breaker, not a default step — see §17 for the call-budget rule governing it. It is never useful for the stationary 500m case, which is a plain point-radius check against an already-known place location and needs no road context.
 
+---
+
 ## 5. Day route ordering
 
 **Rule**: the stop order used to **draw a day's route on a map** starts at the accommodation slept in the **previous night** (where the day began) and ends at the accommodation for the **upcoming night** (where the day ends) — even when the latter isn't chronologically the last event of the day (e.g. a dinner scheduled after check-in still comes before the accommodation stop in the drawn route, since geographically the day still ends there).
@@ -213,6 +230,8 @@ Reduce this to a single "stops progress" fraction — how many of the trip's sto
 - When looking up "the accommodation event of the day" for this purpose, resolve specifically the original accommodation stop — never a check-in companion event auto-generated for it (§7): the companion is a time-bound arrival window, the accommodation stop itself is the (not time-bound) boundary anchor described here. The two must never be conflated.
 
 This same origin-to-destination sequence — previous-night accommodation, the day's stops in order, next-night accommodation — is also the backbone the itinerary list is built from once transit events are materialized between each pair (§7): the visible list and the map route converge on the same chronological sequence, instead of being two independently ordered views of the same day.
+
+---
 
 ## 6. Travel mode and travel-time estimation
 
@@ -231,16 +250,18 @@ This same origin-to-destination sequence — previous-night accommodation, the d
 
 **Distance from current location**: same routing API, but with the origin set to the user's live device location (browser/device geolocation permission) rather than another stop. If permission is denied or unavailable, this must stay silently empty — it's an enrichment, never allowed to block anything else from rendering.
 
+---
+
 ## 7. Auto-generated transit events
 
 **Rule**: every travel leg between two consecutive stops in a day's sequence (§5) — including the boundary accommodation events — must be materialized as its **own calendar event**, category `transport`, positioned chronologically between its origin and destination. It is not an inline annotation or a connector drawn between two other events: it is a first-class event with its own `start_time`, `end_time`, and duration, exactly like any stop.
 
 **Worked example**: the group starts the day at their accommodation (the departure point), then wants to hike at a nature park that takes 2 hours to visit and 3 hours to drive to. The day's itinerary must show **three** events, in order: the accommodation (departure point), a transit event covering the 3-hour drive, and the park visit (a 2-hour block) — not two stops with the travel time hidden in a tooltip between them.
 
-**Generation**: whenever two consecutive `planned` stops (§3) in the day's sequence both have a resolvable place identifier, and no transit event already links them, generate one automatically. A transit event is fully derived and **cannot be manually edited, retimed, started early (§2), or skipped by the user** — the same protection extends to check-in events below, for the same reason: neither has an independent existence apart from the stops it's derived from. Its existence, timing, and duration are recomputed whenever anything about either endpoint changes (place, time, reordering, planning-status change, or removal), following the same cascading-recalculation logic used for any other itinerary edit (§14, Flows 2–3). Wanting a different duration, a different travel mode, or to skip the leg entirely always means editing one of the two endpoint stops (or the per-trip travel-mode override, §6) — never the transit event itself.
+**Generation**: whenever two consecutive `planned` stops (§3) in the day's sequence both have a resolvable place identifier, and no transit event already links them, generate one automatically. A transit event is fully derived and **cannot be manually edited, retimed, started early (§2), or skipped by the user** — the same protection extends to check-in and departure events below, for the same reason: none of them has an independent existence apart from the stops it's derived from. Its existence, timing, and duration are recomputed whenever anything about either endpoint changes (place, time, reordering, planning-status change, becoming `skipped`, or removal) — a stop marked `skipped` (§2) is treated exactly like a removal for this purpose, since it drops out of the active route the same way — following the same cascading-recalculation logic used for any other itinerary edit (§14, Flows 2–3). Wanting a different duration, a different travel mode, or to skip the leg entirely always means editing one of the two endpoint stops (or the per-trip travel-mode override, §6) — never the transit event itself.
 
 **Timing**:
-- `start_time` = the origin's actual departure time: its `end_time` if known, otherwise its `start_time`, otherwise — e.g. a morning departure from an overnight accommodation with no explicit checkout time — a trip-level default "day start" time.
+- `start_time` = the origin's actual departure time: its `end_time` if known, otherwise its `start_time`, otherwise — e.g. a morning departure from an overnight accommodation with no generated departure event (see "Departure events" below) or explicit checkout time — a trip-level default "day start" time.
 - duration = the routing estimate between the two places for the applicable travel mode (§6, including any per-trip travel-mode override), optionally including the same proportional break allowance used for long driving legs elsewhere in the app (§14, Flow 1).
 - `end_time` = `start_time` + duration. This computed arrival time becomes the destination stop's own start time — **unless the destination is an accommodation stop with a declared check-in window, in which case the real arrival target is that accommodation's generated check-in event (see "Check-in events" below) — which may itself start later than the raw arrival time, if the group gets there before the window opens — not the accommodation stop's own position at the end of the day.** For any other destination, the computed arrival must also respect that place's own opening-hours constraints (§8) — arriving after its latest legal start time is exactly the same kind of conflict as missing a check-in window, just against a different boundary. If the destination stop already carries a manually fixed `start_time` earlier than this computed arrival, that is a scheduling conflict and must be surfaced the same way any other itinerary conflict is (§14) — never silently overwritten.
 
@@ -253,11 +274,22 @@ This same origin-to-destination sequence — previous-night accommodation, the d
 - If an accommodation has no declared check-in window, skip this entirely — the plain accommodation stop is enough, exactly as before.
 - Like transit events, a check-in event is not directly editable, retimeable, startable-early, or skippable by the user (see "Generation" above) — it exists exactly as long as, and exactly as computed from, its parent accommodation's window, and it carries no planning status of its own (§3): it's present whenever the parent accommodation (always `planned`) has a window set, absent otherwise.
 
-**Naming**: derive a label from the two endpoints (e.g. "Travel to {destination name}") for transit legs; check-in events use the fixed `"Check-in {accommodation name}"` format above instead — so every generated event reads naturally without manual titling.
+**Departure events (accommodation only)**: the morning mirror of check-in events, for the same reason — an accommodation stop isn't time-bound (§5), but leaving it can still be, when the property enforces a checkout deadline (e.g. "out by 11:00"). Unlike check-in's window, this is a single **upper bound**, not a window with two edges — there's no meaningful "opens at" for leaving, only a "must be gone by."
+- If an accommodation stop has a declared checkout deadline, generate a **distinct, derived companion event** — named `"Check-out {accommodation name}"` — category `accommodation`, system-generated, never the boundary anchor that §5 looks for.
+- Fixed duration: **15 minutes** (shorter than check-in's 30 — settling up and handing back keys is typically quicker than checking in), applied uniformly regardless of accommodation type.
+- **Placement**: `end_time` = the *earlier* of (a) the checkout deadline, or (b) the departure time the day's actual first commitment requires — computed backward from it the same way §8 computes a latest legal start time, chained back through the outgoing transit leg. If nothing that day drives an earlier departure, it defaults to the deadline itself — the latest reasonable moment, maximizing time at the accommodation before it has to become a hard constraint rather than a default. `start_time` = `end_time − 15min`.
+- **Conflict**: if even departing at the exact deadline doesn't leave enough time to reach the day's first real commitment on time, that's a genuine conflict — the checkout deadline is a hard floor under how early the day can start, and it must be surfaced the same way any other itinerary conflict is (§14), never silently absorbed by pushing the first commitment late.
+- This departure event — not the accommodation stop's own (non-time-bound) position — becomes the origin for that day's first outgoing transit leg (see "Timing" above): the leg's `start_time` is this event's `end_time`, the same way any other stop's actual departure time feeds the next leg.
+- If an accommodation has no declared checkout deadline, skip this entirely — the plain accommodation stop is enough, exactly as before, and the next day's first leg falls back to the trip-level default "day start" time per "Timing" above.
+- Like check-in events, a departure event is not directly editable, retimeable, startable-early, or skippable by the user, carries no planning status of its own (§3), and exists exactly as long as its parent accommodation's checkout deadline is set.
+
+**Naming**: derive a label from the two endpoints (e.g. "Travel to {destination name}") for transit legs; check-in and departure events use the fixed `"Check-in {accommodation name}"` / `"Check-out {accommodation name}"` formats above instead — so every generated event reads naturally without manual titling.
 
 **Single source of truth**: once legs exist as real events, everywhere else in the app that needs a leg's duration or distance — an inline "N min to next stop" indicator, a "distance/time traveled so far" trip-level stat, the calendar export — must read it from the transit event itself instead of independently recomputing the pair. One computation per leg, reused everywhere, so the number shown on the map, in the list, in the stats, and in any exported calendar always agrees.
 
 **Delay detection**: a transit leg's delay is always the gap between its **planned** `end_time` (the arrival time computed at generation or last recalculation) and a **live** arrival estimate re-queried from the same routing API (§6) as the trip progresses — not a one-off computation, but the same estimation mechanism kept fresh. This live-vs-planned gap is exactly what the notification rules (§11, rules 3–5) act on, and what a delay-triggered re-planning preview (§11, §14) is computed against.
+
+---
 
 ## 8. Opening hours and closing-time constraints
 
@@ -271,9 +303,13 @@ This same origin-to-destination sequence — previous-night accommodation, the d
 
 **Conflicts**: the same conflict-and-preview mechanism as everywhere else (§7's check-in-window conflict, §14's guardrails) — a stop that can't fit within its place's hours, or whose upstream transit-caused delay pushes it past the latest legal start time, must be surfaced explicitly with a proposed resolution, never silently scheduled anyway.
 
+---
+
 ## 9. Navigation deep link
 
 Given a stop with a place identifier, build a universal maps "directions" URL/intent that opens the user's native maps app on mobile and falls back to a web maps URL in the browser. If no place identifier is available, fall back to a raw stored link for that stop, or nothing if that's missing too.
+
+---
 
 ## 10. Categories
 
@@ -286,6 +322,8 @@ Given a stop with a place identifier, build a universal maps "directions" URL/in
 Every other category — waypoints, activities, meals, downtime, notes, or anything else a user invents — is free-form, fully renameable, fully deletable (with events in it reassigned or left uncategorized, implementation's choice), and carries no special logic anywhere in the app.
 
 **Styling**: every category, reserved or user-defined, needs a display label, a **theme-aware color token** (for the app's own styling) **and** the same color as a plain hex value (needed anywhere the styling layer can't be read, e.g. map marker rendering, which typically only accepts literal colors), plus an icon. For user-defined categories these are chosen at creation time (e.g. a color picker, an icon picker) rather than hardcoded; derive a pastel "badge" variant of each category's style programmatically from its single solid color (e.g. via a color-mix function) rather than hand-authoring a second color per category, so creating a new category never requires manually tuning a matching tint.
+
+---
 
 ## 11. Push notification rules
 
@@ -301,7 +339,7 @@ Evaluate on a periodic job (recommended cadence: every ~5 minutes; the job's "di
 1. **Daily recap**: once, at the user's configured recap time, a summary of today's `planned` (§3) stops with their times.
 2. **Reminder before start**: for each of today's `planned` stops with a start time, a heads-up a fixed number of minutes before it starts (recommended default: 30 minutes).
 3. **Short delay**: delay is a property of *travel*, never of a stationary stop — a stop running exactly on schedule must never trigger this, no matter how long its own duration is. So: for the day's currently `in_progress` transit event (§7) only, re-query its live arrival estimate and compare it to its planned `end_time` (§7's live-vs-planned gap). Once that gap crosses a first threshold (recommended default: 5 minutes), notify with the updated arrival time so the user immediately sees the knock-on effect. If no transit event is currently in progress (the group is mid-activity, not mid-travel), this rule simply has nothing to evaluate.
-4. **Long delay**: same check as rule 3, second higher threshold (recommended default: 30 minutes), a more prominent message. Additionally, if the accumulated delay threatens a later `planned` stop that same day — not enough time left to fit it as planned, or a fixed commitment at risk (a closing time, a check-in window closing, a reservation) — generate a re-planning preview via the AI assistant (§14, Flow 2) with a concrete proposed resolution: drop the at-risk stop, swap it for a currently-`optional` stop (§3) that still fits, or shorten the time allotted to later stops. Never apply any of this automatically — surface it and require the user's explicit confirmation, per the assistant's standing no-silent-write principle.
+4. **Long delay**: same check as rule 3, second higher threshold (recommended default: 30 minutes), a more prominent message. Additionally, if the accumulated delay threatens a later `planned` stop that same day — not enough time left to fit it as planned, or a fixed commitment at risk (a closing time, a check-in window closing, a reservation) — generate a re-planning preview via the AI assistant (§14, Flow 2) with a concrete proposed resolution: drop the at-risk stop, swap it for a currently-`optional` stop (§3) that still fits, shorten the time allotted to later stops, or move the at-risk stop to a different day that still has room for it. Never apply any of this automatically — surface it and require the user's explicit confirmation, per the assistant's standing no-silent-write principle.
 5. **Travel-time variation**: the look-ahead counterpart to rules 3–4 — checked on the *next* scheduled leg, before the group has even set off on it, rather than on one already in progress. Compare the **current** estimated travel time for that leg against a **baseline** recorded the first time it was checked (one stored baseline per leg). Notify only if the deviation is **significant** by two joint conditions — an absolute floor (recommended: at least 10 minutes) **and** a relative floor (recommended: at least 25% over baseline) — both required, not just one, to avoid false alarms on short legs (where a fixed number of minutes is a huge proportion) or on long legs (where a fixed percentage is a huge absolute swing). When the deviation is large enough to also threaten a later stop the same day, trigger the same re-planning preview described in rule 4, rather than a bare notification.
 
 **Scope note**: rules 3–5 on their own can only detect delay that shows up as a *slower route* (traffic, closures, live conditions) — they compare a live routing estimate against a plan, nothing more. The other failure mode — "the group simply hasn't left the previous stop yet even though the plan says they should have" — is covered separately by §4's position-confirmation signal, when geolocation is available: a stop still showing "position doesn't match" well past its planned window is exactly that case. That signal stays opt-in and non-blocking (§4, §6), so without location permission this failure mode goes back to being unobservable rather than treated as a bug.
@@ -309,6 +347,10 @@ Evaluate on a periodic job (recommended cadence: every ~5 minutes; the job's "di
 **Deduplication**: send every notification through a "claim" pattern — an insert into a log table keyed by `(notification_type, event_id_or_day)` guarded by a unique constraint. A duplicate insert is rejected by the database and the job treats that notification as already sent — this makes double-sends impossible even with overlapping/concurrent job runs, with no separate locking mechanism needed.
 
 Make each rule **individually toggleable per user**, defaulting to enabled if the user has no saved preferences yet.
+
+**In-app notification history**: a push notification is fire-and-forget by nature (§11 above) — it reaches the device once, and if missed or dismissed, the information behind it shouldn't be lost. Every notification that gets sent by the rules above must also be persisted as a durable, browsable entry (title, body, the event/day it relates to, a timestamp, and a read/unread flag) so a user can open an in-app history and see everything they were sent, in order, whether or not the push itself was seen. The same dedup "claim" row already used to prevent double-sends (above) is the natural place to carry this — it's already inserted exactly once per notification. A collaborative realtime update (another member's change, §15's "Updated by [name]" notice) is a different kind of event — informational, not one of the five push rules — but if it's also surfaced in this same history feed, it should be written through the same persisted-entry shape, not a separate mechanism, so one feed covers "things that happened" regardless of source. Marking an entry read is a simple per-user flag flip, never destructive (no entry is ever deleted by reading it), and an unread count over this feed is what a notification-bell badge should be counting.
+
+---
 
 ## 12. Flight tracking
 
@@ -320,6 +362,8 @@ A periodic job (recommended cadence: every few hours — live flight data is onl
 4. Map provider-specific cancelled/diverted statuses onto the event's display label, leaving the label untouched for every other status.
 5. Write only to fields that are already rendered elsewhere in the app for delay/status display, and deliver the update to clients through the same realtime sync used for every other event change — no dedicated delivery path needed for this feature specifically.
 
+---
+
 ## 13. Calendar export feed
 
 - Include **only** events that are `planned` (§3) **and** have both a day and a start time set — `optional` stops and unscheduled events are left out of the export. Auto-generated transit events (§7) are exported like any other planned event, so the exported calendar shows the same travel blocks as the in-app itinerary.
@@ -329,19 +373,23 @@ A periodic job (recommended cadence: every few hours — live flight data is onl
 - Follow the export format's line-folding rules (e.g. the iCalendar spec's 75-octet limit per line).
 - Derive the calendar's display name from the trip's own name, so the export is meaningful for any trip without per-trip code changes.
 
+---
+
 ## 14. AI itinerary-editing assistant
 
 **General principle**: no direct write to the itinerary from an AI-driven action. Every change first produces a **preview** — a temporary, not-yet-persisted proposal showing the day's new state and what specifically changes (old time → new time, stops shifted, transit events regenerated, conflicts detected). The user must explicitly confirm before anything is written, and every confirmed write is recorded in the change-history log. Run this server-side only, so the underlying AI provider's credentials are never exposed to the client.
 
-- **Flow 1 — Add a stop**: given a name, a pasted map link, or a place identifier, look up (via web search and/or a places API) its location, a plausible category, opening hours (including, for food-service places, kitchen closing time where distinct from the venue's own — §8), price, a short description, and a recommended visit duration. Propose where in the day to insert it by computing real travel times to/from the adjacent stops, **including a proportional break allowance on long driving legs** (recommended default: roughly a 15-minute break per hour of driving, applied to legs longer than about 20–25 minutes) — this feeds directly into the duration of the transit events (§7) generated on either side of the new stop. Check for conflicts against the place's opening-hours constraints (§8) and against the day's other fixed stops; if there's a conflict, surface it explicitly with a suggested alternative instead of silently ignoring it. This same flow also covers the assistant *proactively* surfacing an existing `optional` stop (§3) that now fits into a day's free time — there's no new lookup needed in that case, just a scheduling proposal for a stop whose data already exists.
-- **Flow 2 — Remove a stop / report a delay**: cascade-recalculate every later stop that same day (a pure computation using already-known travel times — no external lookup needed), regenerating the transit events (§7) on both sides of the change. If the accumulated delay puts a fixed commitment at risk (a closing time, a check-in window closing, a reservation), or there's no longer enough time to fit a later stop as planned, propose a concrete resolution: drop the at-risk stop, swap it for a currently-`optional` stop (§3) that still fits, or shorten the time allotted to later stops — never applied without the user's confirmation.
+- **Flow 1 — Add a stop**: given a name, a pasted map link, or a place identifier, look up (via web search and/or a places API) its location, a plausible category, opening hours (including, for food-service places, kitchen closing time where distinct from the venue's own — §8), price, a short description, and a recommended visit duration. Propose where in the day to insert it by computing real travel times to/from the adjacent stops, **including a proportional break allowance on long driving legs** (recommended default: roughly a 15-minute break per hour of driving, applied to legs longer than about 20–25 minutes) — this feeds directly into the duration of the transit events (§7) generated on either side of the new stop. Check for conflicts against the place's opening-hours constraints (§8) and against the day's other fixed stops; if there's a conflict, surface it explicitly with a suggested alternative instead of silently ignoring it. This same flow also covers the assistant *proactively* surfacing an existing `optional` stop (§3) that now fits into free time on one or more days — there's no new lookup needed in that case, just a scheduling proposal (or several, one per day it fits) for a stop whose data already exists.
+- **Flow 2 — Remove a stop / report a delay**: cascade-recalculate every later stop that same day (a pure computation using already-known travel times — no external lookup needed), regenerating the transit events (§7) on both sides of the change — the same cascade applies whether the stop was actually deleted or just marked `skipped` (§2), since both remove it from the active route identically. If the accumulated delay puts a fixed commitment at risk (a closing time, a check-in window closing, a reservation), or there's no longer enough time to fit a later stop as planned, propose a concrete resolution: drop the at-risk stop, swap it for a currently-`optional` stop (§3) that still fits, shorten the time allotted to later stops, or move it to a different day that still has room — never applied without the user's confirmation.
 - **Flow 3 — Manually edit a time**: same cascading recalculation as Flow 2, including regenerating the adjacent transit events (§7). Flag conflicts against known opening-hours constraints (§8) or other stops instead of silently saving a plan that no longer works.
 - **Guardrails**:
-  - never modify an accommodation stop's own booking details (dates, check-in window, check-out time) without a separate, explicit confirmation — they're tied to real-world bookings outside the app's control (this is about the accommodation stop's *fields*, not the derived check-in event below, which is a different thing that happens to share the name);
+  - never modify an accommodation stop's own booking details (dates, check-in window, checkout deadline) without a separate, explicit confirmation — they're tied to real-world bookings outside the app's control (this is about the accommodation stop's *fields*, not the derived check-in/check-out events below, which are a different thing that happens to share the name);
   - never set an accommodation stop's planning status to `optional` (§3) — accommodation is always `planned`;
-  - never directly edit, retime, start early (§2), or skip a transit event or a check-in companion event (both §7) — neither has an independent existence; achieving a change there always means editing one of the transit event's two endpoint stops, or the accommodation's check-in window, instead;
+  - never directly edit, retime, start early (§2), or skip a transit event or a check-in/check-out companion event (all §7) — none of them has an independent existence; achieving a change there always means editing one of the transit event's two endpoint stops, or the accommodation's check-in window or checkout deadline, instead;
   - never fabricate a price, time, or address that a lookup didn't actually return — state the uncertainty in the preview instead of writing a plausible-but-unverified value;
   - never auto-save without the confirmation step above.
+
+---
 
 ## 15. Multi-user, roles, and sync
 
@@ -355,9 +403,15 @@ A periodic job (recommended cadence: every few hours — live flight data is onl
 
 **Enforcement**: apply this at the database layer (row-level security scoped by trip membership *and* role), not only by hiding write controls in the client UI — a `viewer`'s write attempt, or any request bypassing the UI entirely, must be rejected server-side.
 
+**Owner — a flag on top of `admin`, not a fourth role**: exactly one member per trip is the owner, defaulting to whoever created it (§16). Being owner grants exactly two things a regular `admin` doesn't have: sole authority to delete the entire trip, and sole authority to transfer ownership to another `admin`. Everything else an owner can do, any `admin` can already do — this stays a flag (`is_owner`) on the membership record rather than a new role value, so the role enum itself (the table above) doesn't grow just to express "and also the one who owns it." A trip can never end up with zero owners: transferring ownership is the only way to change who holds it, there's no "remove the owner" path that doesn't go through a transfer first. This is stronger than the "last admin" protection above — removing the owner as a member must be blocked even when other admins exist, since the last-admin rule alone doesn't fire in that case and would otherwise let the trip end up with an admin but no owner. Ownership must be transferred to another admin *before* the current owner can be removed, demoted, or can leave the trip, regardless of how many other admins are present.
+
+**Inviting members**: two mechanisms, both assigning a role at the moment of invitation rather than defaulting everyone to the same one — a shareable trip link (anyone with the link can join, at the role the link was generated for) and a direct email invite (sent to one specific address, at a role chosen when sending it). Either way, only `admin` can generate an invite of either kind, and the role attached to an invite can always be changed later by an `admin` exactly like any other member's role.
+
 **Sync**: real-time updates apply to all roles equally — remote inserts/updates/deletes update every connected client's local state without a manual refetch, regardless of whether that client can write.
 
 **Conflict handling**: no locking among the users who can write (`admin`/`editor`) — last write wins. When a remote update didn't originate from the current user, show a lightweight "Updated by [name]" notice resolved from trip membership — informational only, never blocking.
+
+---
 
 ## 16. Trip creation and data entry
 
@@ -365,12 +419,14 @@ A periodic job (recommended cadence: every few hours — live flight data is onl
 
 **Minimum creation flow**:
 1. **Trip basics**: name, start date, end date, and timezone (§1) — required up front, since every later time computation depends on them. Editable later from the same place (a trip settings screen), not just at creation time.
-2. **First member**: the creating user is automatically added as the trip's first member with role `admin` (§15) — trip creation can never produce a trip with zero admins.
+2. **First member**: the creating user is automatically added as the trip's first member with role `admin` and flagged as its **owner** (§15) — trip creation can never produce a trip with zero admins or no owner.
 3. **Categories**: the two reserved categories (`accommodation`, `transport`, §10) exist automatically; offer a small set of common, renameable/removable starter categories (e.g. "activity", "meal", "note") for convenience, without preventing the creator from deleting them and defining entirely their own set instead.
 4. **Stops**: add stops one at a time through a form covering the same fields the app uses everywhere else — name, category, day (optional — an unscheduled stop is a valid "backlog" item), start/end time or a free-text "not yet defined" label (same split rule as below), place lookup, price, description, planning status (§3), and so on; each stop defaults to `planned` unless the creator explicitly marks it `optional`. There is no separate "setup-only" data-entry surface: this form **is** the same itinerary editor used for every later edit, just applied to a trip that starts empty. Adding a second geolocated `planned` stop on the same day must trigger the same transit-event generation as any other edit (§7) — a trip built entirely through the CMS ends up with travel legs already in place, with no separate backfill step required.
 5. **Inviting others**: optional at creation time, and equally available later from trip settings — an `admin` can add members and assign them a role (§15) at any point, not only during initial setup.
 
 **Bulk import (optional, additive)**: alongside the form-based flow above, support seeding a trip from an external spreadsheet (or any structured source) through a stable, documented column-mapping convention, for creators who already have their planning done elsewhere and don't want to re-enter it stop by stop. Key rule worth building in from the start: source spreadsheets commonly mix a structured time with a free-text note in the same cell (e.g. an end time noted as "12:30, departure"). The import must always split this into a pure, calculation-usable end time plus a separate descriptive note — never store them concatenated as in the source. Non-time placeholders (e.g. "evening check-in", "to be confirmed") must be preserved as an explicit "not yet defined" state in a label field, never parsed as if they were real times. Imported stops go through the exact same transit-event generation as stops entered through the CMS form (§7) — bulk import and manual entry are two ways of populating the same underlying data, not two different code paths with different guarantees.
+
+---
 
 ## 17. API call budget and caching policy
 
@@ -403,8 +459,6 @@ The same principle already applies to flight tracking (§12) — scoped to a nar
 
 **Position-confirmation call budget (§4)**: the accuracy-aware distance/corridor check itself is always free — client-side geometry against already-cached place/route data. The only paid call it can trigger — a road-snapping tie-breaker for the narrow case of a genuinely ambiguous transit fix (§4) — must be rate-limited independently of the position-reading frequency (recommended: at most once every few minutes per active transit leg), never fired per raw position sample. Most reads resolve for free, either clearly inside or clearly outside the accuracy-adjusted threshold; only the ambiguous minority ever reach this call.
 
----
-
 # Part C — Integration wiring and build order
 
 ## C1. API key handling
@@ -430,12 +484,12 @@ Subscribe each client to `postgres_changes` on `events` (and `categories`, `trip
 ## C4. Suggested build order
 
 1. **Schema + RLS**: all tables in A3, roles enforced per §15, before any UI.
-2. **Auth + trip creation CMS** (§16): the minimum flow to get one trip with one admin and a place to add stops.
+2. **Auth + trip creation CMS** (§16): sign up/log in/password reset, then the minimum flow to get one trip with one admin/owner and a place to add stops. The trip-list/switcher (A4) falls out of the same schema once auth exists.
 3. **Core CRUD + status derivation** (§2, §3, §10): events and categories, with `status_runtime` persisted correctly before anything else depends on it.
-4. **Core UI capabilities** (A4) against real data — the live status view, the trip-wide view, and the itinerary editor, in whatever screen structure was chosen — no travel-time or AI features yet.
-5. **Routing integration**: mode determination + estimation (§6), then transit-event generation (§7) and check-in events, then opening-hours constraints (§8) — build in this order since each layers on the previous one's output.
+4. **Core UI capabilities** (A4) against real data — the live status view, the trip-wide view, the itinerary editor, and search over the trip's own stops — in whatever screen structure was chosen — no travel-time or AI features yet.
+5. **Routing integration**: mode determination + estimation (§6), then transit-event generation (§7) and check-in/check-out events, then opening-hours constraints (§8) — build in this order since each layers on the previous one's output.
 6. **Calendar export** (§13) and **navigation deep links** (§9) — low-risk, no dependencies beyond step 3.
-7. **Push notifications** (§11): install prompt and subscription flow first, then the rule engine, in a background job.
+7. **Push notifications** (§11): install prompt and subscription flow first, then the rule engine and the in-app notification history it feeds, in a background job.
 8. **Flight tracking** (§12): additive, independent of everything except step 3's schema.
 9. **AI assistant** (§14): the most delicate piece — build last, once every rule it needs to respect (§2, §3, §6, §7, §8) is already correct and stable, since the assistant's whole job is to compute previews using exactly those rules.
 10. **Polish + PWA**: install prompts, offline shell, icons, final accessibility pass on category colors (§10).

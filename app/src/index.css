@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+/* Design tokens pulled from the Figma file (fileKey XhqgtrjffwnzvejSMhd2nV) via
+   get_variable_defs — these are the actual values, not a placeholder scale.
+   The Figma file only designs a light theme, so there is no dark variant here. */
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --color-bg: #fafaf9;
+  --color-surface-1: #ebebe6;
+  --color-surface-2: #e2e1da;
+  --color-brand: #465a54;
+  --color-brand-tint: #4a7c73;
+  --color-accent: #ff6a5f;
+  --color-text-primary: #292927;
+  --color-text-secondary: #52524d;
+  --color-text-tertiary: #787873;
+  --color-border-strong: #c8c8c0;
+
+  --radius-input: 12px;
+  --radius-chip: 14px;
+  --radius-card: 24px;
+  --radius-card-lg: 32px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-bg text-text-primary antialiased;
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}

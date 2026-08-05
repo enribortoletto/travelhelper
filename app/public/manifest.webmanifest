@@ -1,0 +1,13 @@
+{
+  "name": "Trip Companion",
+  "short_name": "TripCo",
+  "description": "Collaborative group trip planner",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#1f2937",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

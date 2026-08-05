@@ -1,9 +1,9 @@
-import { useState, type FormEvent } from "react";
-import { addDays, differenceInCalendarDays, format } from "date-fns";
+import { useState } from "react";
+import { differenceInCalendarDays } from "date-fns";
 import { WizardHeader } from "../../../components/ui/WizardHeader";
 import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
-import { TextField } from "../../../components/ui/TextField";
+import { StopForm, type StopFormValues } from "../../../components/stops/StopForm";
 import { createStop } from "../../../lib/trips";
 import type { Category, EventRow, Trip } from "../../../lib/types";
 import { Info } from "lucide-react";
@@ -17,40 +17,28 @@ export function AddStopsStep({
   categories: Category[];
   onNext: () => void;
 }) {
-  const tripLengthDays = differenceInCalendarDays(new Date(trip.end_date), new Date(trip.start_date)) + 1;
   const [addedStops, setAddedStops] = useState<EventRow[]>([]);
-  const [name, setName] = useState("");
-  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
-  const [day, setDay] = useState(1);
-  const [timeDefined, setTimeDefined] = useState(true);
-  const [time, setTime] = useState("");
-  const [timeLabel, setTimeLabel] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [formKey, setFormKey] = useState(0);
 
-  const selectedCategory = categories.find((c) => c.id === categoryId);
-  const forcedPlanned = selectedCategory?.name === "accommodation";
-
-  async function handleAdd(event: FormEvent) {
-    event.preventDefault();
-    if (!name || !categoryId) return;
+  async function handleAdd(values: StopFormValues) {
     setSubmitting(true);
     setError(null);
     try {
-      const stopDay = format(addDays(new Date(trip.start_date), day - 1), "yyyy-MM-dd");
       const stop = await createStop({
         trip_id: trip.id,
-        category_id: categoryId,
-        name,
-        day: stopDay,
-        start_time: timeDefined && time ? time : null,
-        start_time_label: !timeDefined && timeLabel ? timeLabel : null,
-        planning_status: "planned",
+        category_id: values.categoryId,
+        name: values.name,
+        day: values.day ?? trip.start_date,
+        start_time: values.timeDefined && values.time ? `${values.time}:00` : null,
+        start_time_label: !values.timeDefined && values.timeLabel ? values.timeLabel : null,
+        planning_status: values.planningStatus,
+        price: values.price || null,
+        description: values.description || null,
       });
       setAddedStops((prev) => [...prev, stop]);
-      setName("");
-      setTime("");
-      setTimeLabel("");
+      setFormKey((k) => k + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add stop.");
     } finally {
@@ -87,91 +75,9 @@ export function AddStopsStep({
         );
       })}
 
-      <Card className="flex flex-col gap-3.5">
-        <p className="text-base font-semibold text-text-primary">New Stop Details</p>
+      <StopForm key={formKey} categories={categories} submitLabel="Add" submitting={submitting} onSubmit={handleAdd} />
 
-        <TextField
-          label="Stop name"
-          required
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Glencoe Visitor Centre"
-        />
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[10px] font-semibold uppercase tracking-wide text-text-secondary">
-            Category
-          </label>
-          <div className="flex flex-wrap gap-1.5">
-            {categories.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setCategoryId(cat.id)}
-                className={`rounded-chip px-3 py-2 text-[10px] font-semibold capitalize ${
-                  cat.id === categoryId ? "bg-brand text-bg" : "bg-surface-2 text-text-primary"
-                }`}
-              >
-                {cat.name}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <div className="flex flex-1 flex-col gap-1.5 rounded-input border border-surface-2 bg-bg p-3">
-            <label className="text-[10px] font-semibold text-text-secondary">Day</label>
-            <input
-              type="number"
-              min={1}
-              max={tripLengthDays}
-              value={day}
-              onChange={(e) => setDay(Number(e.target.value))}
-              className="w-full bg-transparent text-sm font-medium text-text-primary focus:outline-none"
-            />
-          </div>
-          <div className="flex flex-1 flex-col gap-1.5 rounded-input border border-surface-2 bg-bg p-3">
-            <label className="flex items-center justify-between text-[10px] font-semibold text-text-secondary">
-              Time
-              <button
-                type="button"
-                onClick={() => setTimeDefined((v) => !v)}
-                className="font-semibold text-brand"
-              >
-                {timeDefined ? "Use label" : "Use time"}
-              </button>
-            </label>
-            {timeDefined ? (
-              <input
-                type="time"
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                className="w-full bg-transparent text-sm font-medium text-text-primary focus:outline-none"
-              />
-            ) : (
-              <input
-                type="text"
-                value={timeLabel}
-                onChange={(e) => setTimeLabel(e.target.value)}
-                placeholder="e.g. Evening check-in"
-                className="w-full bg-transparent text-sm font-medium text-text-primary placeholder:text-text-tertiary focus:outline-none"
-              />
-            )}
-          </div>
-        </div>
-
-        {forcedPlanned && (
-          <p className="text-xs text-text-secondary">
-            Accommodation stops are always planned, not optional.
-          </p>
-        )}
-
-        {error && <p className="text-xs text-accent">{error}</p>}
-
-        <Button type="button" variant="brand" onClick={handleAdd} disabled={submitting}>
-          {submitting ? "Adding…" : "Add"}
-        </Button>
-      </Card>
+      {error && <p className="text-xs text-accent">{error}</p>}
 
       <div className="flex items-center gap-2 rounded-card bg-surface-1 p-3.5">
         <Info className="size-4 shrink-0 text-text-secondary" />

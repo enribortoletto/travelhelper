@@ -45,6 +45,7 @@ export interface EventRow {
   end_time_label: string | null;
   description: string | null;
   price: string | null;
+  visit_duration_minutes: number | null;
   is_derived: boolean;
 }
 

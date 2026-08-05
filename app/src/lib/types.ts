@@ -76,6 +76,37 @@ export interface EventRow {
   checkout_for_event_id: string | null;
 }
 
+export interface NotificationPrefs {
+  recap: boolean;
+  reminder_before_start: boolean;
+  short_delay: boolean;
+  long_delay: boolean;
+  travel_time_variation: boolean;
+}
+
+export interface UserSettings {
+  user_id: string;
+  trip_id: string;
+  daily_recap_time: string;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+  push_subscription: object | null;
+  notification_prefs: NotificationPrefs;
+}
+
+export interface NotificationLogRow {
+  id: string;
+  trip_id: string;
+  user_id: string;
+  notification_type: string;
+  event_id: string | null;
+  day: string | null;
+  title: string;
+  body: string;
+  read_at: string | null;
+  created_at: string;
+}
+
 export interface TripInvite {
   id: string;
   trip_id: string;

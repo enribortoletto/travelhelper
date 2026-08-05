@@ -20,10 +20,11 @@ import { CategoryManager } from "../../components/stops/CategoryManager";
 import { stopFormValuesToPayload, type StopFormValues } from "../../components/stops/StopForm";
 import { TravelModeOverridesManager } from "../../components/stops/TravelModeOverridesManager";
 import { CalendarExportCard } from "../../components/stops/CalendarExportCard";
+import { AlertsPanel } from "../../components/stops/AlertsPanel";
 import { TodayView } from "./TodayView";
 import { ItineraryView } from "./ItineraryView";
 
-type Tab = "today" | "itinerary" | "routing" | "categories";
+type Tab = "today" | "itinerary" | "routing" | "alerts" | "categories";
 
 export default function TripDetailPage() {
   const { tripId } = useParams<{ tripId: string }>();
@@ -152,7 +153,7 @@ export default function TripDetailPage() {
       )}
 
       <div className="flex gap-1.5 rounded-chip bg-surface-1 p-1">
-        {(["today", "itinerary", "routing", "categories"] as const).map((t) => (
+        {(["today", "itinerary", "routing", "alerts", "categories"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -207,6 +208,8 @@ export default function TripDetailPage() {
           <TravelModeOverridesManager tripId={trip.id} overrides={overrides} onChange={setOverrides} />
         </>
       )}
+
+      {trip && tab === "alerts" && <AlertsPanel tripId={trip.id} />}
 
       {trip && tab === "categories" && (
         <CategoryManager tripId={trip.id} categories={categories} onChange={setCategories} />

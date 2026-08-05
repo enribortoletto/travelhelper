@@ -415,3 +415,6 @@ enabled = true
 
 [functions.calendar-feed]
 verify_jwt = false
+
+[functions.notification-rules]
+verify_jwt = false

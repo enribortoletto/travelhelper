@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { deriveRuntimeStatus, fallbackEndTime, getTodayString, shiftTime } from "./status";
-import type { Category, EventRow, Trip, TripInvite, TripMember, TripRole } from "./types";
+import type { Category, EventRow, Trip, TripInvite, TripMember, TripRole, WeeklyOpeningHours } from "./types";
 
 export interface TripWithMembership extends Trip {
   member: Pick<TripMember, "role" | "is_owner">;
@@ -63,6 +63,13 @@ export interface NewStopInput {
   description?: string | null;
   price?: string | null;
   maps_link?: string | null;
+  maps_place_id?: string | null;
+  visit_duration_minutes?: number | null;
+  opening_hours?: WeeklyOpeningHours | null;
+  kitchen_closing_time?: string | null;
+  check_in_window_start?: string | null;
+  check_in_window_end?: string | null;
+  checkout_deadline?: string | null;
 }
 
 export async function createStop(input: NewStopInput): Promise<EventRow> {
@@ -101,6 +108,13 @@ export interface StopEditInput {
   website?: string | null;
   contact?: string | null;
   maps_link?: string | null;
+  maps_place_id?: string | null;
+  visit_duration_minutes?: number | null;
+  opening_hours?: WeeklyOpeningHours | null;
+  kitchen_closing_time?: string | null;
+  check_in_window_start?: string | null;
+  check_in_window_end?: string | null;
+  checkout_deadline?: string | null;
 }
 
 export async function updateStop(stopId: string, input: Partial<StopEditInput>): Promise<EventRow> {
@@ -173,7 +187,6 @@ export async function delayStop(stop: EventRow, minutes: number): Promise<EventR
  */
 export async function syncStopStatuses(stops: EventRow[], timezone: string): Promise<void> {
   const stale = stops.filter((stop) => {
-    if (stop.is_derived) return false;
     const computed = deriveRuntimeStatus({
       day: stop.day,
       startTime: stop.start_time,

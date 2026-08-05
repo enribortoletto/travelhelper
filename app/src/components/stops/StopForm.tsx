@@ -2,7 +2,9 @@ import { useState, type FormEvent } from "react";
 import { Card } from "../ui/Card";
 import { TextField } from "../ui/TextField";
 import { Button } from "../ui/Button";
-import type { Category, EventRow, PlanningStatus } from "../../lib/types";
+import { PlaceAutocompleteInput } from "./PlaceAutocompleteInput";
+import { fetchOpeningHours } from "../../lib/opening-hours";
+import type { Category, EventRow, PlanningStatus, WeeklyOpeningHours } from "../../lib/types";
 
 export interface StopFormValues {
   name: string;
@@ -15,6 +17,35 @@ export interface StopFormValues {
   price: string;
   description: string;
   mapsLink: string;
+  placeId: string | null;
+  visitDurationMinutes: string;
+  openingHours: WeeklyOpeningHours | null;
+  kitchenClosingTime: string;
+  checkInWindowStart: string;
+  checkInWindowEnd: string;
+  checkoutDeadline: string;
+}
+
+/** Shared mapper so both the wizard and the trip-detail form submit identical payload shapes. */
+export function stopFormValuesToPayload(values: StopFormValues) {
+  return {
+    category_id: values.categoryId,
+    name: values.name,
+    day: values.day,
+    start_time: values.timeDefined && values.time ? `${values.time}:00` : null,
+    start_time_label: !values.timeDefined && values.timeLabel ? values.timeLabel : null,
+    planning_status: values.planningStatus,
+    price: values.price || null,
+    description: values.description || null,
+    maps_link: values.mapsLink || null,
+    maps_place_id: values.placeId,
+    visit_duration_minutes: values.visitDurationMinutes ? Number(values.visitDurationMinutes) : null,
+    opening_hours: values.openingHours,
+    kitchen_closing_time: values.kitchenClosingTime ? `${values.kitchenClosingTime}:00` : null,
+    check_in_window_start: values.checkInWindowStart ? `${values.checkInWindowStart}:00` : null,
+    check_in_window_end: values.checkInWindowEnd ? `${values.checkInWindowEnd}:00` : null,
+    checkout_deadline: values.checkoutDeadline ? `${values.checkoutDeadline}:00` : null,
+  };
 }
 
 function valuesFromStop(stop: EventRow): StopFormValues {
@@ -29,6 +60,13 @@ function valuesFromStop(stop: EventRow): StopFormValues {
     price: stop.price ?? "",
     description: stop.description ?? "",
     mapsLink: stop.maps_link ?? "",
+    placeId: stop.maps_place_id,
+    visitDurationMinutes: stop.visit_duration_minutes != null ? String(stop.visit_duration_minutes) : "",
+    openingHours: stop.opening_hours,
+    kitchenClosingTime: stop.kitchen_closing_time?.slice(0, 5) ?? "",
+    checkInWindowStart: stop.check_in_window_start?.slice(0, 5) ?? "",
+    checkInWindowEnd: stop.check_in_window_end?.slice(0, 5) ?? "",
+    checkoutDeadline: stop.checkout_deadline?.slice(0, 5) ?? "",
   };
 }
 
@@ -61,20 +99,49 @@ export function StopForm({
           price: "",
           description: "",
           mapsLink: "",
+          placeId: null,
+          visitDurationMinutes: "",
+          openingHours: null,
+          kitchenClosingTime: "",
+          checkInWindowStart: "",
+          checkInWindowEnd: "",
+          checkoutDeadline: "",
         },
   );
+  const [fetchingHours, setFetchingHours] = useState(false);
 
   const selectedCategory = categories.find((c) => c.id === values.categoryId);
   const forcedPlanned = selectedCategory?.name === "accommodation";
+  const isAccommodation = selectedCategory?.name === "accommodation";
+  const isFoodService = selectedCategory?.name === "meal";
+  const hasOpeningHours = selectedCategory?.name !== "accommodation" && selectedCategory?.name !== "transport";
 
   function set<K extends keyof StopFormValues>(key: K, value: StopFormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: value }));
   }
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!values.name || !values.categoryId) return;
-    onSubmit(forcedPlanned ? { ...values, planningStatus: "planned" } : values);
+
+    let finalValues = forcedPlanned ? { ...values, planningStatus: "planned" as const } : values;
+
+    // §8: fetch opening hours automatically once a place + day are both
+    // known, but only when we don't already have them for this place —
+    // never block stop creation if the lookup itself fails.
+    if (hasOpeningHours && finalValues.placeId && finalValues.day && finalValues.placeId !== initialStop?.maps_place_id) {
+      setFetchingHours(true);
+      try {
+        const openingHours = await fetchOpeningHours(finalValues.placeId);
+        finalValues = { ...finalValues, openingHours };
+      } catch {
+        // Enrichment only — proceed without opening hours on failure.
+      } finally {
+        setFetchingHours(false);
+      }
+    }
+
+    onSubmit(finalValues);
   }
 
   return (
@@ -83,13 +150,20 @@ export function StopForm({
         {initialStop ? "Edit Stop" : "New Stop Details"}
       </p>
 
-      <TextField
-        label="Stop name"
-        required
-        value={values.name}
-        onChange={(e) => set("name", e.target.value)}
-        placeholder="e.g. Glencoe Visitor Centre"
-      />
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="stop-name" className="text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
+          Stop name
+        </label>
+        <PlaceAutocompleteInput
+          value={values.name}
+          onChange={(name) => set("name", name)}
+          onPlaceSelected={(place) => {
+            set("placeId", place.placeId);
+            set("mapsLink", place.mapsLink);
+          }}
+        />
+        {values.placeId && <p className="text-[10px] text-text-tertiary">Linked to a real place ✓</p>}
+      </div>
 
       <div className="flex flex-col gap-1.5">
         <label className="text-[10px] font-semibold uppercase tracking-wide text-text-secondary">
@@ -160,13 +234,63 @@ export function StopForm({
           placeholder="e.g. £12"
         />
         <TextField
-          label="Maps link"
-          className="flex-[2]"
-          value={values.mapsLink}
-          onChange={(e) => set("mapsLink", e.target.value)}
-          placeholder="Paste a Google Maps link"
+          label="Visit duration (min)"
+          className="flex-1"
+          type="number"
+          min={0}
+          value={values.visitDurationMinutes}
+          onChange={(e) => set("visitDurationMinutes", e.target.value)}
+          placeholder="e.g. 90"
         />
       </div>
+
+      {!values.placeId && (
+        <TextField
+          label="Maps link"
+          value={values.mapsLink}
+          onChange={(e) => set("mapsLink", e.target.value)}
+          placeholder="Paste a Google Maps link (or pick a place above)"
+        />
+      )}
+
+      {isFoodService && (
+        <TextField
+          label="Kitchen closing time (optional)"
+          type="time"
+          value={values.kitchenClosingTime}
+          onChange={(e) => set("kitchenClosingTime", e.target.value)}
+        />
+      )}
+
+      {isAccommodation && (
+        <div className="flex flex-col gap-2 rounded-card bg-surface-1 p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-text-secondary">
+            Check-in / check-out (optional)
+          </p>
+          <div className="flex gap-3">
+            <TextField
+              label="Check-in opens"
+              className="flex-1"
+              type="time"
+              value={values.checkInWindowStart}
+              onChange={(e) => set("checkInWindowStart", e.target.value)}
+            />
+            <TextField
+              label="Check-in closes"
+              className="flex-1"
+              type="time"
+              value={values.checkInWindowEnd}
+              onChange={(e) => set("checkInWindowEnd", e.target.value)}
+            />
+          </div>
+          <TextField
+            label="Checkout deadline"
+            type="time"
+            value={values.checkoutDeadline}
+            onChange={(e) => set("checkoutDeadline", e.target.value)}
+          />
+        </div>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <label className="text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
@@ -202,8 +326,8 @@ export function StopForm({
             Cancel
           </Button>
         )}
-        <Button type="button" variant="brand" onClick={handleSubmit} disabled={submitting}>
-          {submitting ? "Saving…" : submitLabel}
+        <Button type="button" variant="brand" onClick={handleSubmit} disabled={submitting || fetchingHours}>
+          {fetchingHours ? "Checking hours…" : submitting ? "Saving…" : submitLabel}
         </Button>
       </div>
     </Card>

@@ -3,7 +3,7 @@ import { differenceInCalendarDays } from "date-fns";
 import { WizardHeader } from "../../../components/ui/WizardHeader";
 import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
-import { StopForm, type StopFormValues } from "../../../components/stops/StopForm";
+import { StopForm, stopFormValuesToPayload, type StopFormValues } from "../../../components/stops/StopForm";
 import { createStop } from "../../../lib/trips";
 import type { Category, EventRow, Trip } from "../../../lib/types";
 import { Info } from "lucide-react";
@@ -28,15 +28,8 @@ export function AddStopsStep({
     try {
       const stop = await createStop({
         trip_id: trip.id,
-        category_id: values.categoryId,
-        name: values.name,
+        ...stopFormValuesToPayload(values),
         day: values.day ?? trip.start_date,
-        start_time: values.timeDefined && values.time ? `${values.time}:00` : null,
-        start_time_label: !values.timeDefined && values.timeLabel ? values.timeLabel : null,
-        planning_status: values.planningStatus,
-        price: values.price || null,
-        description: values.description || null,
-        maps_link: values.mapsLink || null,
       });
       setAddedStops((prev) => [...prev, stop]);
       setFormKey((k) => k + 1);

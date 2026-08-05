@@ -48,10 +48,9 @@ export function ItineraryView({
   ).length;
 
   const filtered = useMemo(() => {
-    if (!query.trim()) return stops.filter((s) => !s.is_derived);
+    if (!query.trim()) return stops;
     const q = query.trim().toLowerCase();
     return stops.filter((s) => {
-      if (s.is_derived) return false;
       const category = categories.find((c) => c.id === s.category_id);
       return s.name.toLowerCase().includes(q) || category?.name.toLowerCase().includes(q);
     });

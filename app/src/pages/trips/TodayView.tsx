@@ -23,7 +23,7 @@ export function TodayView({
   onDelay: (stop: EventRow) => void;
 }) {
   const todayStr = getTodayString(trip.timezone);
-  const todays = stops.filter((s) => !s.is_derived && s.day === todayStr);
+  const todays = stops.filter((s) => s.day === todayStr);
 
   const current = todays.filter((s) => s.status_runtime === "in_progress");
   const upcoming = todays

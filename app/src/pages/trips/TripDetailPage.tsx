@@ -13,19 +13,24 @@ import {
   syncStopStatuses,
   updateStop,
 } from "../../lib/trips";
-import type { Category, EventRow, Trip } from "../../lib/types";
+import { recalculateTrip, type ItineraryConflict } from "../../lib/itinerary-engine";
+import { listTravelModeOverrides } from "../../lib/travel-mode-overrides";
+import type { Category, EventRow, Trip, TravelModeOverride } from "../../lib/types";
 import { CategoryManager } from "../../components/stops/CategoryManager";
-import type { StopFormValues } from "../../components/stops/StopForm";
+import { stopFormValuesToPayload, type StopFormValues } from "../../components/stops/StopForm";
+import { TravelModeOverridesManager } from "../../components/stops/TravelModeOverridesManager";
 import { TodayView } from "./TodayView";
 import { ItineraryView } from "./ItineraryView";
 
-type Tab = "today" | "itinerary" | "categories";
+type Tab = "today" | "itinerary" | "routing" | "categories";
 
 export default function TripDetailPage() {
   const { tripId } = useParams<{ tripId: string }>();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [stops, setStops] = useState<EventRow[] | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [overrides, setOverrides] = useState<TravelModeOverride[]>([]);
+  const [conflicts, setConflicts] = useState<ItineraryConflict[]>([]);
   const [editingStop, setEditingStop] = useState<EventRow | "new" | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +39,11 @@ export default function TripDetailPage() {
   async function refreshStops(currentTrip: Trip) {
     const freshStops = await listStops(currentTrip.id);
     await syncStopStatuses(freshStops, currentTrip.timezone);
-    // Re-fetch so the UI reflects any statuses syncStopStatuses just persisted.
+    // §7: (re)generate derived transit/check-in/check-out events for every
+    // day from the current stops, then re-fetch so the UI reflects both the
+    // persisted statuses and whatever the engine just wrote.
+    const foundConflicts = await recalculateTrip(currentTrip);
+    setConflicts(foundConflicts);
     setStops(await listStops(currentTrip.id));
   }
 
@@ -51,7 +60,9 @@ export default function TripDetailPage() {
         return;
       }
       setTrip(tripData);
-      setCategories(await listCategories(tripId));
+      const cats = await listCategories(tripId);
+      setCategories(cats);
+      setOverrides(await listTravelModeOverrides(tripId));
       await refreshStops(tripData);
     })();
   }, [tripId]);
@@ -61,18 +72,7 @@ export default function TripDetailPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const payload = {
-        trip_id: trip.id,
-        category_id: values.categoryId,
-        name: values.name,
-        day: values.day,
-        start_time: values.timeDefined && values.time ? `${values.time}:00` : null,
-        start_time_label: !values.timeDefined && values.timeLabel ? values.timeLabel : null,
-        planning_status: values.planningStatus,
-        price: values.price || null,
-        description: values.description || null,
-        maps_link: values.mapsLink || null,
-      };
+      const payload = { trip_id: trip.id, ...stopFormValuesToPayload(values) };
       if (editingStop && editingStop !== "new") {
         await updateStop(editingStop.id, payload);
       } else {
@@ -137,8 +137,21 @@ export default function TripDetailPage() {
 
       {error && <p className="text-sm text-accent">{error}</p>}
 
+      {conflicts.length > 0 && (
+        <div className="flex flex-col gap-1.5 rounded-card bg-accent/10 p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-accent">
+            {conflicts.length} scheduling conflict{conflicts.length > 1 ? "s" : ""}
+          </p>
+          {conflicts.map((c, i) => (
+            <p key={i} className="text-xs text-text-primary">
+              {c.message}
+            </p>
+          ))}
+        </div>
+      )}
+
       <div className="flex gap-1.5 rounded-chip bg-surface-1 p-1">
-        {(["today", "itinerary", "categories"] as const).map((t) => (
+        {(["today", "itinerary", "routing", "categories"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -185,6 +198,10 @@ export default function TripDetailPage() {
           onStartNow={handleStartNow}
           onDelay={handleDelay}
         />
+      )}
+
+      {trip && tab === "routing" && (
+        <TravelModeOverridesManager tripId={trip.id} overrides={overrides} onChange={setOverrides} />
       )}
 
       {trip && tab === "categories" && (

@@ -47,10 +47,13 @@ export function StopCard({
   const displayStatus = stop.status_runtime === "inactive" && past ? "done" : stop.status_runtime;
 
   return (
-    <Card size="sm" className="flex flex-col gap-2">
+    <Card size="sm" className={`flex flex-col gap-2 ${stop.is_derived ? "border border-dashed border-border-strong bg-surface-1" : ""}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1">
-          <p className="text-sm font-semibold text-text-primary">{stop.name}</p>
+          <p className="text-sm font-semibold text-text-primary">
+            {stop.is_derived && (stop.derived_kind === "transit" ? "🚗 " : stop.derived_kind === "checkin" ? "🔑 " : "🧳 ")}
+            {stop.name}
+          </p>
           <p className="text-xs text-text-secondary capitalize">
             {category?.name}
             {stop.day ? ` • ${format(new Date(stop.day), "d MMM")}` : ""}
@@ -64,32 +67,38 @@ export function StopCard({
         </span>
       </div>
 
-      <div className="flex flex-wrap gap-3 text-xs font-semibold">
-        <button onClick={onEdit} className="text-brand">
-          Edit
-        </button>
-        <button onClick={onToggleSkip} className="text-text-secondary">
-          {stop.is_skipped ? "Unskip" : "Skip"}
-        </button>
-        {stop.status_runtime === "inactive" && !stop.is_skipped && (
-          <button onClick={onStartNow} className="text-text-secondary">
-            Start Now
+      {stop.is_derived ? (
+        <p className="text-[10px] text-text-tertiary">
+          Auto-generated from your itinerary — edit the stops around it to change this.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-3 text-xs font-semibold">
+          <button onClick={onEdit} className="text-brand">
+            Edit
           </button>
-        )}
-        {onDelay && !stop.is_skipped && stop.start_time && (
-          <button onClick={onDelay} className="text-text-secondary">
-            Delay +15m
+          <button onClick={onToggleSkip} className="text-text-secondary">
+            {stop.is_skipped ? "Unskip" : "Skip"}
           </button>
-        )}
-        {stop.maps_link && (
-          <a href={stop.maps_link} target="_blank" rel="noreferrer" className="text-brand">
-            Navigate
-          </a>
-        )}
-        <button onClick={onDelete} className="text-accent">
-          Delete
-        </button>
-      </div>
+          {stop.status_runtime === "inactive" && !stop.is_skipped && (
+            <button onClick={onStartNow} className="text-text-secondary">
+              Start Now
+            </button>
+          )}
+          {onDelay && !stop.is_skipped && stop.start_time && (
+            <button onClick={onDelay} className="text-text-secondary">
+              Delay +15m
+            </button>
+          )}
+          {stop.maps_link && (
+            <a href={stop.maps_link} target="_blank" rel="noreferrer" className="text-brand">
+              Navigate
+            </a>
+          )}
+          <button onClick={onDelete} className="text-accent">
+            Delete
+          </button>
+        </div>
+      )}
     </Card>
   );
 }

@@ -3,6 +3,7 @@ export type PlanningStatus = "planned" | "optional";
 export type EventStatus = "inactive" | "in_progress" | "skipped";
 export type TravelMode = "driving" | "walking" | "transit";
 export type DerivedKind = "transit" | "checkin" | "checkout";
+export type FlightLeg = "departure" | "arrival";
 
 export interface Trip {
   id: string;
@@ -74,6 +75,9 @@ export interface EventRow {
   transit_to_event_id: string | null;
   checkin_for_event_id: string | null;
   checkout_for_event_id: string | null;
+  flight_number: string | null;
+  flight_leg: FlightLeg | null;
+  delay_minutes: number;
 }
 
 export interface NotificationPrefs {

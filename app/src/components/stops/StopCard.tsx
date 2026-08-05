@@ -63,6 +63,12 @@ export function StopCard({
             {stop.start_time_label ? ` • ${stop.start_time_label}` : ""}
             {stop.planning_status === "optional" ? " • Optional" : ""}
           </p>
+          {stop.flight_number && (
+            <p className="text-xs text-text-secondary">
+              ✈️ {stop.flight_number}
+              {stop.delay_minutes > 0 ? ` • Delayed ${stop.delay_minutes} min` : ""}
+            </p>
+          )}
         </div>
         <span className={`shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-medium ${STATUS_STYLE[displayStatus]}`}>
           {STATUS_LABEL[displayStatus]}

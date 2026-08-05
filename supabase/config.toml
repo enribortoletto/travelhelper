@@ -418,3 +418,6 @@ verify_jwt = false
 
 [functions.notification-rules]
 verify_jwt = false
+
+[functions.flight-tracking]
+verify_jwt = false

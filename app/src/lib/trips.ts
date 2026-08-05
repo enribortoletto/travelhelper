@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { deriveRuntimeStatus, fallbackEndTime, getTodayString, shiftTime } from "./status";
-import type { Category, EventRow, Trip, TripInvite, TripMember, TripRole, WeeklyOpeningHours } from "./types";
+import type { Category, EventRow, FlightLeg, Trip, TripInvite, TripMember, TripRole, WeeklyOpeningHours } from "./types";
 
 export interface TripWithMembership extends Trip {
   member: Pick<TripMember, "role" | "is_owner">;
@@ -70,6 +70,8 @@ export interface NewStopInput {
   check_in_window_start?: string | null;
   check_in_window_end?: string | null;
   checkout_deadline?: string | null;
+  flight_number?: string | null;
+  flight_leg?: FlightLeg | null;
 }
 
 export async function createStop(input: NewStopInput): Promise<EventRow> {
@@ -115,6 +117,8 @@ export interface StopEditInput {
   check_in_window_start?: string | null;
   check_in_window_end?: string | null;
   checkout_deadline?: string | null;
+  flight_number?: string | null;
+  flight_leg?: FlightLeg | null;
 }
 
 export async function updateStop(stopId: string, input: Partial<StopEditInput>): Promise<EventRow> {

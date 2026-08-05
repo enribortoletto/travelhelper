@@ -4,7 +4,7 @@ import { TextField } from "../ui/TextField";
 import { Button } from "../ui/Button";
 import { PlaceAutocompleteInput } from "./PlaceAutocompleteInput";
 import { fetchOpeningHours } from "../../lib/opening-hours";
-import type { Category, EventRow, PlanningStatus, WeeklyOpeningHours } from "../../lib/types";
+import type { Category, EventRow, FlightLeg, PlanningStatus, WeeklyOpeningHours } from "../../lib/types";
 
 export interface StopFormValues {
   name: string;
@@ -24,6 +24,8 @@ export interface StopFormValues {
   checkInWindowStart: string;
   checkInWindowEnd: string;
   checkoutDeadline: string;
+  flightNumber: string;
+  flightLeg: FlightLeg;
 }
 
 /** Shared mapper so both the wizard and the trip-detail form submit identical payload shapes. */
@@ -45,6 +47,8 @@ export function stopFormValuesToPayload(values: StopFormValues) {
     check_in_window_start: values.checkInWindowStart ? `${values.checkInWindowStart}:00` : null,
     check_in_window_end: values.checkInWindowEnd ? `${values.checkInWindowEnd}:00` : null,
     checkout_deadline: values.checkoutDeadline ? `${values.checkoutDeadline}:00` : null,
+    flight_number: values.flightNumber || null,
+    flight_leg: values.flightNumber ? values.flightLeg : null,
   };
 }
 
@@ -67,6 +71,8 @@ function valuesFromStop(stop: EventRow): StopFormValues {
     checkInWindowStart: stop.check_in_window_start?.slice(0, 5) ?? "",
     checkInWindowEnd: stop.check_in_window_end?.slice(0, 5) ?? "",
     checkoutDeadline: stop.checkout_deadline?.slice(0, 5) ?? "",
+    flightNumber: stop.flight_number ?? "",
+    flightLeg: stop.flight_leg ?? "departure",
   };
 }
 
@@ -106,6 +112,8 @@ export function StopForm({
           checkInWindowStart: "",
           checkInWindowEnd: "",
           checkoutDeadline: "",
+          flightNumber: "",
+          flightLeg: "departure",
         },
   );
   const [fetchingHours, setFetchingHours] = useState(false);
@@ -113,6 +121,7 @@ export function StopForm({
   const selectedCategory = categories.find((c) => c.id === values.categoryId);
   const forcedPlanned = selectedCategory?.name === "accommodation";
   const isAccommodation = selectedCategory?.name === "accommodation";
+  const isTransport = selectedCategory?.name === "transport";
   const isFoodService = selectedCategory?.name === "meal";
   const hasOpeningHours = selectedCategory?.name !== "accommodation" && selectedCategory?.name !== "transport";
 
@@ -251,6 +260,40 @@ export function StopForm({
           onChange={(e) => set("mapsLink", e.target.value)}
           placeholder="Paste a Google Maps link (or pick a place above)"
         />
+      )}
+
+      {isTransport && (
+        <div className="flex flex-col gap-2 rounded-card bg-surface-1 p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-text-secondary">
+            Flight tracking (optional)
+          </p>
+          <div className="flex gap-3">
+            <TextField
+              label="Flight number"
+              className="flex-1"
+              value={values.flightNumber}
+              onChange={(e) => set("flightNumber", e.target.value.toUpperCase())}
+              placeholder="e.g. BA1326"
+            />
+            <div className="flex flex-1 flex-col gap-1.5">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-text-tertiary">Leg</label>
+              <div className="flex gap-1.5">
+                {(["departure", "arrival"] as const).map((leg) => (
+                  <button
+                    key={leg}
+                    type="button"
+                    onClick={() => set("flightLeg", leg)}
+                    className={`flex-1 rounded-chip py-2 text-[10px] font-semibold capitalize ${
+                      values.flightLeg === leg ? "bg-brand text-bg" : "bg-surface-2 text-text-primary"
+                    }`}
+                  >
+                    {leg}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {isFoodService && (

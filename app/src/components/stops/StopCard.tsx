@@ -25,6 +25,7 @@ export function StopCard({
   onDelete,
   onToggleSkip,
   onStartNow,
+  onDelay,
 }: {
   stop: EventRow;
   category?: Category;
@@ -33,6 +34,7 @@ export function StopCard({
   onDelete: () => void;
   onToggleSkip: () => void;
   onStartNow: () => void;
+  onDelay?: () => void;
 }) {
   // Conflict-resolution rule (06): Figma's 4th visual state, "done", is a
   // display-layer mapping of inactive + the past flag, not a stored status.
@@ -73,6 +75,16 @@ export function StopCard({
           <button onClick={onStartNow} className="text-text-secondary">
             Start Now
           </button>
+        )}
+        {onDelay && !stop.is_skipped && stop.start_time && (
+          <button onClick={onDelay} className="text-text-secondary">
+            Delay +15m
+          </button>
+        )}
+        {stop.maps_link && (
+          <a href={stop.maps_link} target="_blank" rel="noreferrer" className="text-brand">
+            Navigate
+          </a>
         )}
         <button onClick={onDelete} className="text-accent">
           Delete

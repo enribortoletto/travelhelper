@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { deriveRuntimeStatus, fallbackEndTime } from "./status";
+import { deriveRuntimeStatus, fallbackEndTime, getTodayString, shiftTime } from "./status";
 import type { Category, EventRow, Trip, TripInvite, TripMember, TripRole } from "./types";
 
 export interface TripWithMembership extends Trip {
@@ -62,6 +62,7 @@ export interface NewStopInput {
   planning_status: "planned" | "optional";
   description?: string | null;
   price?: string | null;
+  maps_link?: string | null;
 }
 
 export async function createStop(input: NewStopInput): Promise<EventRow> {
@@ -99,6 +100,7 @@ export interface StopEditInput {
   description?: string | null;
   website?: string | null;
   contact?: string | null;
+  maps_link?: string | null;
 }
 
 export async function updateStop(stopId: string, input: Partial<StopEditInput>): Promise<EventRow> {
@@ -134,7 +136,7 @@ export async function startStopNow(
 ): Promise<EventRow> {
   const now = new Date();
   const zonedNow = new Date(now.toLocaleString("en-US", { timeZone: timezone }));
-  const day = `${zonedNow.getFullYear()}-${String(zonedNow.getMonth() + 1).padStart(2, "0")}-${String(zonedNow.getDate()).padStart(2, "0")}`;
+  const day = getTodayString(timezone, now);
   const startTime = `${String(zonedNow.getHours()).padStart(2, "0")}:${String(zonedNow.getMinutes()).padStart(2, "0")}:00`;
 
   let endTime: string;
@@ -147,6 +149,21 @@ export async function startStopNow(
   }
 
   return updateStop(stop.id, { day, start_time: startTime, end_time: endTime } as Partial<StopEditInput>);
+}
+
+/**
+ * Manual "mark as delayed" quick action for the live status view (A4) —
+ * shifts a timed stop's start/end forward by a fixed increment. This is a
+ * stand-in for §11's real delay detection (live routing estimate vs. plan)
+ * and the §14 cascade it would normally trigger on the stops after it —
+ * both land in later build steps; for now it's a plain, direct time edit,
+ * same shape as any other manual retime.
+ */
+export async function delayStop(stop: EventRow, minutes: number): Promise<EventRow> {
+  if (!stop.start_time) throw new Error("Only stops with a set time can be marked delayed.");
+  const start_time = shiftTime(stop.start_time, minutes);
+  const end_time = stop.end_time ? shiftTime(stop.end_time, minutes) : fallbackEndTime(start_time);
+  return updateStop(stop.id, { start_time, end_time } as Partial<StopEditInput>);
 }
 
 /**

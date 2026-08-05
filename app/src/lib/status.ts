@@ -16,6 +16,21 @@ function timeToMinutes(time: string): number {
   return h * 60 + m;
 }
 
+/** "yyyy-MM-dd" for "now" in the trip's own timezone — never the device's. */
+export function getTodayString(timezone: string, now: Date = new Date()): string {
+  const zonedNow = toZonedTime(now, timezone);
+  return `${zonedNow.getFullYear()}-${String(zonedNow.getMonth() + 1).padStart(2, "0")}-${String(zonedNow.getDate()).padStart(2, "0")}`;
+}
+
+/** Shift a "HH:mm[:ss]" time by N minutes, clamped to the same day (00:00–23:59:59). */
+export function shiftTime(time: string, minutes: number): string {
+  const [h, m] = time.split(":").map(Number);
+  const total = h * 60 + m + minutes;
+  if (total >= 24 * 60) return "23:59:59";
+  const clamped = Math.max(0, total);
+  return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}:00`;
+}
+
 interface StatusInput {
   day: string | null;
   startTime: string | null;

@@ -46,6 +46,7 @@ export interface EventRow {
   description: string | null;
   price: string | null;
   visit_duration_minutes: number | null;
+  maps_link: string | null;
   is_derived: boolean;
 }
 

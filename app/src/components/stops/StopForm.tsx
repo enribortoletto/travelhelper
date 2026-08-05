@@ -14,6 +14,7 @@ export interface StopFormValues {
   planningStatus: PlanningStatus;
   price: string;
   description: string;
+  mapsLink: string;
 }
 
 function valuesFromStop(stop: EventRow): StopFormValues {
@@ -27,6 +28,7 @@ function valuesFromStop(stop: EventRow): StopFormValues {
     planningStatus: stop.planning_status ?? "planned",
     price: stop.price ?? "",
     description: stop.description ?? "",
+    mapsLink: stop.maps_link ?? "",
   };
 }
 
@@ -58,6 +60,7 @@ export function StopForm({
           planningStatus: "planned",
           price: "",
           description: "",
+          mapsLink: "",
         },
   );
 
@@ -151,9 +154,17 @@ export function StopForm({
       <div className="flex gap-3">
         <TextField
           label="Price"
+          className="flex-1"
           value={values.price}
           onChange={(e) => set("price", e.target.value)}
           placeholder="e.g. £12"
+        />
+        <TextField
+          label="Maps link"
+          className="flex-[2]"
+          value={values.mapsLink}
+          onChange={(e) => set("mapsLink", e.target.value)}
+          placeholder="Paste a Google Maps link"
         />
       </div>
 

@@ -36,6 +36,7 @@ export function AddStopsStep({
         planning_status: values.planningStatus,
         price: values.price || null,
         description: values.description || null,
+        maps_link: values.mapsLink || null,
       });
       setAddedStops((prev) => [...prev, stop]);
       setFormKey((k) => k + 1);

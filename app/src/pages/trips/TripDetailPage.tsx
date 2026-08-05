@@ -4,6 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import {
   createStop,
+  delayStop,
   deleteStop,
   listCategories,
   listStops,
@@ -13,10 +14,12 @@ import {
   updateStop,
 } from "../../lib/trips";
 import type { Category, EventRow, Trip } from "../../lib/types";
-import { Card } from "../../components/ui/Card";
-import { StopForm, type StopFormValues } from "../../components/stops/StopForm";
-import { StopCard } from "../../components/stops/StopCard";
 import { CategoryManager } from "../../components/stops/CategoryManager";
+import type { StopFormValues } from "../../components/stops/StopForm";
+import { TodayView } from "./TodayView";
+import { ItineraryView } from "./ItineraryView";
+
+type Tab = "today" | "itinerary" | "categories";
 
 export default function TripDetailPage() {
   const { tripId } = useParams<{ tripId: string }>();
@@ -24,7 +27,9 @@ export default function TripDetailPage() {
   const [stops, setStops] = useState<EventRow[] | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [editingStop, setEditingStop] = useState<EventRow | "new" | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("today");
 
   async function refreshStops(currentTrip: Trip) {
     const freshStops = await listStops(currentTrip.id);
@@ -54,6 +59,7 @@ export default function TripDetailPage() {
   async function handleSubmitStop(values: StopFormValues) {
     if (!trip) return;
     setError(null);
+    setSubmitting(true);
     try {
       const payload = {
         trip_id: trip.id,
@@ -65,6 +71,7 @@ export default function TripDetailPage() {
         planning_status: values.planningStatus,
         price: values.price || null,
         description: values.description || null,
+        maps_link: values.mapsLink || null,
       };
       if (editingStop && editingStop !== "new") {
         await updateStop(editingStop.id, payload);
@@ -75,6 +82,8 @@ export default function TripDetailPage() {
       await refreshStops(trip);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save stop.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -108,6 +117,16 @@ export default function TripDetailPage() {
     }
   }
 
+  async function handleDelay(stop: EventRow) {
+    if (!trip) return;
+    try {
+      await delayStop(stop, 15);
+      await refreshStops(trip);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not mark stop as delayed.");
+    }
+  }
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-4 px-4 py-8">
       <Link to="/" className="flex items-center gap-1 text-sm text-text-secondary">
@@ -118,63 +137,59 @@ export default function TripDetailPage() {
 
       {error && <p className="text-sm text-accent">{error}</p>}
 
-      {trip && (
-        <CategoryManager tripId={trip.id} categories={categories} onChange={setCategories} />
-      )}
-
-      <h2 className="text-lg font-semibold text-text-primary">Stops</h2>
-
-      {stops === null && <p className="text-sm text-text-secondary">Loading…</p>}
-      {stops?.length === 0 && editingStop !== "new" && (
-        <Card>
-          <p className="text-sm text-text-secondary">No stops yet.</p>
-        </Card>
-      )}
-
-      <div className="flex flex-col gap-3">
-        {stops?.map((stop) =>
-          trip && editingStop !== "new" && editingStop && (editingStop as EventRow).id === stop.id ? (
-            <StopForm
-              key={stop.id}
-              categories={categories}
-              initialStop={stop}
-              submitLabel="Save Changes"
-              onSubmit={handleSubmitStop}
-              onCancel={() => setEditingStop(null)}
-            />
-          ) : (
-            trip && (
-              <StopCard
-                key={stop.id}
-                stop={stop}
-                trip={trip}
-                category={categories.find((c) => c.id === stop.category_id)}
-                onEdit={() => setEditingStop(stop)}
-                onDelete={() => handleDelete(stop)}
-                onToggleSkip={() => handleToggleSkip(stop)}
-                onStartNow={() => handleStartNow(stop)}
-              />
-            )
-          ),
-        )}
-      </div>
-
-      {trip &&
-        (editingStop === "new" ? (
-          <StopForm
-            categories={categories}
-            submitLabel="Add Stop"
-            onSubmit={handleSubmitStop}
-            onCancel={() => setEditingStop(null)}
-          />
-        ) : (
+      <div className="flex gap-1.5 rounded-chip bg-surface-1 p-1">
+        {(["today", "itinerary", "categories"] as const).map((t) => (
           <button
-            onClick={() => setEditingStop("new")}
-            className="rounded-card border border-dashed border-border-strong p-3 text-center text-sm font-semibold text-brand"
+            key={t}
+            onClick={() => setTab(t)}
+            className={`flex-1 rounded-chip py-2 text-xs font-semibold capitalize ${
+              tab === t ? "bg-brand text-bg" : "text-text-secondary"
+            }`}
           >
-            + Add a stop
+            {t}
           </button>
         ))}
+      </div>
+
+      {stops === null && <p className="text-sm text-text-secondary">Loading…</p>}
+
+      {trip && stops && tab === "today" && (
+        <TodayView
+          trip={trip}
+          stops={stops}
+          categories={categories}
+          onEdit={(stop) => {
+            setEditingStop(stop);
+            setTab("itinerary");
+          }}
+          onDelete={handleDelete}
+          onToggleSkip={handleToggleSkip}
+          onStartNow={handleStartNow}
+          onDelay={handleDelay}
+        />
+      )}
+
+      {trip && stops && tab === "itinerary" && (
+        <ItineraryView
+          trip={trip}
+          stops={stops}
+          categories={categories}
+          editingStop={editingStop}
+          submitting={submitting}
+          onStartCreate={() => setEditingStop("new")}
+          onStartEdit={setEditingStop}
+          onCancelEdit={() => setEditingStop(null)}
+          onSubmitStop={handleSubmitStop}
+          onDelete={handleDelete}
+          onToggleSkip={handleToggleSkip}
+          onStartNow={handleStartNow}
+          onDelay={handleDelay}
+        />
+      )}
+
+      {trip && tab === "categories" && (
+        <CategoryManager tripId={trip.id} categories={categories} onChange={setCategories} />
+      )}
     </div>
   );
 }

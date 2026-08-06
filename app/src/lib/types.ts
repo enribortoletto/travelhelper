@@ -111,6 +111,39 @@ export interface NotificationLogRow {
   created_at: string;
 }
 
+export type AiPreviewStatus = "pending" | "confirmed" | "discarded";
+
+export interface AiPreview {
+  id: string;
+  trip_id: string;
+  day: string | null;
+  proposed_changes: {
+    flow: "add_stop" | "remove_stop" | "edit_time";
+    day: string | null;
+    summary: string;
+    conflicts: { kind: string; message: string; eventId?: string }[];
+    resolutionSuggestions?: { type: string; eventId: string; name: string }[];
+    creates?: Record<string, unknown>[];
+    updates?: { event_id: string; changes: Record<string, unknown>; old?: Record<string, unknown> }[];
+    deletes?: { event_id: string; mode: "delete" | "skip" }[];
+  };
+  created_by: string;
+  status: AiPreviewStatus;
+  created_at: string;
+}
+
+export interface ItineraryChangeLogRow {
+  id: string;
+  trip_id: string;
+  event_id: string | null;
+  change_type: string;
+  old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown> | null;
+  triggered_by_user: string | null;
+  ai_preview_id: string | null;
+  created_at: string;
+}
+
 export interface TripInvite {
   id: string;
   trip_id: string;
